@@ -1,0 +1,6 @@
+{
+  "name": "Sessão Certa",
+  "description": "Plataforma SaaS completa para psicólogos gerenciarem pacientes, agenda, sessões com prontuário e lembretes de WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
