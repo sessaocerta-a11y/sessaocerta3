@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import {
   ShieldCheck,
@@ -272,10 +273,12 @@ export const AdminView: React.FC = () => {
     <div className="space-y-6 pb-20">
       {/* Header Admin */}
       <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-semibold">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Sessão Certa Admin SaaS</span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Logo size="sm" variant="dark" />
+            <span className="px-2.5 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[10px] font-extrabold uppercase">
+              Painel SaaS Admin
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             Painel de Controle da Plataforma
@@ -1402,7 +1405,13 @@ CREATE INDEX idx_sessions_date_status ON public.sessions(professional_id, data, 
                       <span className="text-slate-200 flex-1">{log.message}</span>
                       {log.meta && (
                         <span className="text-slate-400 font-mono text-[10px] truncate max-w-xs">
-                          {JSON.stringify(log.meta)}
+                          {(() => {
+                            try {
+                              return JSON.stringify(log.meta);
+                            } catch {
+                              return '[Objeto Inserializável]';
+                            }
+                          })()}
                         </span>
                       )}
                     </div>
@@ -1447,7 +1456,13 @@ CREATE INDEX idx_sessions_date_status ON public.sessions(professional_id, data, 
                         </div>
                         {ev.details && (
                           <pre className="text-[10px] text-slate-400 font-mono whitespace-pre-wrap overflow-x-auto">
-                            {JSON.stringify(ev.details, null, 2)}
+                            {(() => {
+                              try {
+                                return JSON.stringify(ev.details, null, 2);
+                              } catch {
+                                return '[Objeto Inserializável]';
+                              }
+                            })()}
                           </pre>
                         )}
                       </div>

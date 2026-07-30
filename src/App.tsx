@@ -53,24 +53,40 @@ function MainAppContent({
     onGoToLanding();
   };
 
+  const handleClosePatientModal = () => {
+    setIsNewPatientModalOpen(false);
+    setActiveTab('dashboard');
+  };
+
+  const handleCloseSessionModal = () => {
+    console.log('[App AUDIT] handleCloseSessionModal executed -> setting isNewSessionModalOpen = false');
+    setIsNewSessionModalOpen(false);
+  };
+
   const handleOpenNewPatient = () => {
+    console.log('[App AUDIT] handleOpenNewPatient executed');
     setPatientToEdit(null);
     setIsNewPatientModalOpen(true);
   };
 
   const handleEditPatient = (patient: Patient) => {
+    console.log('[App AUDIT] handleEditPatient executed for:', patient.name);
     setPatientToEdit(patient);
     setIsNewPatientModalOpen(true);
   };
 
-  const handleOpenNewSession = (date?: string, time?: string) => {
+  const handleOpenNewSession = (date?: any, time?: any) => {
+    const cleanDate = typeof date === 'string' ? date : undefined;
+    const cleanTime = typeof time === 'string' ? time : undefined;
+    console.log('[App AUDIT] handleOpenNewSession executed -> setting isNewSessionModalOpen = true, date:', cleanDate, 'time:', cleanTime);
     setSessionToEdit(null);
-    setSessionPresetDate(date);
-    setSessionPresetTime(time);
+    setSessionPresetDate(cleanDate);
+    setSessionPresetTime(cleanTime);
     setIsNewSessionModalOpen(true);
   };
 
   const handleEditSession = (session: Session) => {
+    console.log('[App AUDIT] handleEditSession executed for session:', session.id);
     setSessionToEdit(session);
     setIsNewSessionModalOpen(true);
   };
@@ -123,6 +139,7 @@ function MainAppContent({
               onGoToSchedule={() => setActiveTab('schedule')}
               onGoToPatients={() => setActiveTab('patients')}
               onGoToReminders={() => setActiveTab('reminders')}
+              onGoToFinance={() => setActiveTab('sessions')}
               onOpenOnboarding={() => setIsOnboardingOpen(true)}
               onSimulatePatientLink={handleSimulatePatientPortal}
             />
@@ -214,17 +231,18 @@ function MainAppContent({
       {/* Patient Form Modal */}
       <PatientFormModal
         isOpen={isNewPatientModalOpen}
-        onClose={() => setIsNewPatientModalOpen(false)}
+        onClose={handleClosePatientModal}
         patientToEdit={patientToEdit}
       />
 
       {/* Session Form Modal */}
       <SessionFormModal
         isOpen={isNewSessionModalOpen}
-        onClose={() => setIsNewSessionModalOpen(false)}
+        onClose={handleCloseSessionModal}
         sessionToEdit={sessionToEdit}
         initialDate={sessionPresetDate}
         initialTime={sessionPresetTime}
+        onOpenNewPatient={handleOpenNewPatient}
       />
 
       {/* Onboarding Wizard Modal */}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import {
   Zap,
@@ -152,21 +153,11 @@ export const SessaoCertaConnectView: React.FC = () => {
         <div className="absolute -top-10 -right-10 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="space-y-2 relative z-10 max-w-2xl">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-950/60">
-              <Zap className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-                <span>Sessão Certa Connect</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Central de Integrações
-                </span>
-              </h1>
-              <p className="text-xs text-slate-400">
-                Conecte seu consultório às melhores ferramentas de comunicação, calendários, cobranças e IA.
-              </p>
-            </div>
+          <div className="flex items-center gap-3">
+            <Logo size="md" variant="dark" />
+            <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase">
+              Central Connect
+            </span>
           </div>
         </div>
 

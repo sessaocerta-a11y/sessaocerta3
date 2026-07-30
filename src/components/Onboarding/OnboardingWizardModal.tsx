@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import {
   CheckCircle2,
@@ -102,9 +103,9 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
         <div className="p-6 space-y-6 flex-1 text-slate-200">
           {/* STEP 1: Boas-vindas */}
           {step === 1 && (
-            <div className="text-center space-y-4 py-4">
-              <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-600 to-sky-600 text-white flex items-center justify-center shadow-lg shadow-emerald-950/50">
-                <Sparkles className="w-8 h-8" />
+            <div className="text-center space-y-4 py-2">
+              <div className="flex justify-center my-2">
+                <Logo size="lg" variant="dark" showTagline={true} />
               </div>
 
               <div className="space-y-2">

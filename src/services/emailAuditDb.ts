@@ -103,7 +103,7 @@ class EmailAuditDatabase {
     data: {
       email_id?: string;
       id?: string;
-      to?: string[];
+      to?: string[] | string;
       from?: string;
       subject?: string;
       [key: string]: any;

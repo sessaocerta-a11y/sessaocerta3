@@ -1,4 +1,5 @@
 import React from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import {
   ShieldCheck,
@@ -47,47 +48,39 @@ export const Navbar: React.FC<NavbarProps> = ({
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-sm">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg tracking-tight text-white">
-                SESSÃO <span className="text-emerald-400">CERTA</span>
-              </span>
-              <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                SaaS MVP
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 hidden sm:block">
-              Menos faltas. Mais organização.
-            </p>
-          </div>
+        <div
+          onClick={onGoToLanding}
+          className="flex items-center gap-3 cursor-pointer hover:opacity-90 transition-opacity"
+          title="Ir para a página inicial"
+        >
+          <Logo size="sm" variant="dark" />
+          <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hidden sm:inline-block">
+            SaaS MVP
+          </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3.5">
         {/* RBAC Role Indicator & Switcher Button */}
         {canSwitchRole ? (
           <button
             onClick={() => setUserRole(isAdmin ? 'professional' : 'admin')}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
               isAdmin
                 ? 'bg-purple-950/60 text-purple-300 border-purple-700/60 hover:bg-purple-900/80 shadow-sm'
                 : 'bg-slate-800/90 text-slate-300 border-slate-700 hover:bg-slate-800'
             }`}
             title="Clique para alternar o perfil de acesso RBAC entre Psicólogo e Admin"
           >
-            <Lock className={`w-3.5 h-3.5 ${isAdmin ? 'text-purple-400' : 'text-emerald-400'}`} />
+            <Lock className={`w-4 h-4 ${isAdmin ? 'text-purple-400' : 'text-emerald-400'}`} />
             <span className="hidden sm:inline">Perfil:</span>
             <span className={isAdmin ? 'text-purple-300 font-black' : 'text-emerald-400 font-bold'}>
               {isAdmin ? 'Admin SaaS' : 'Psicólogo'}
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border bg-slate-800/90 text-slate-300 border-slate-700/80">
-            <Lock className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border bg-slate-800/90 text-slate-300 border-slate-700/80">
+            <Lock className="w-4 h-4 text-emerald-400" />
             <span className="hidden sm:inline">Perfil:</span>
             <span className="text-emerald-400 font-bold">Psicólogo</span>
           </div>
@@ -95,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Sigilo / Privacy Toggle */}
         <button
           onClick={toggleHideConfidentialData}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+          className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
             hideConfidentialData
               ? 'bg-amber-950/40 text-amber-300 border-amber-700/50 shadow-inner'
               : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
@@ -108,12 +101,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           {hideConfidentialData ? (
             <>
-              <EyeOff className="w-3.5 h-3.5 text-amber-400" />
+              <EyeOff className="w-4 h-4 text-amber-400" />
               <span className="hidden md:inline font-semibold">Modo Sigilo (Ativado)</span>
             </>
           ) : (
             <>
-              <Eye className="w-3.5 h-3.5 text-slate-400" />
+              <Eye className="w-4 h-4 text-slate-400" />
               <span className="hidden md:inline">Modo Sigilo (Ocultar Prontuário)</span>
             </>
           )}
@@ -123,10 +116,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onGoToLanding && (
           <button
             onClick={onGoToLanding}
-            className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-sky-300 border border-slate-700 transition-colors"
+            className="hidden xl:flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800/80 hover:bg-slate-700 text-sky-300 border border-slate-700 transition-colors"
             title="Voltar para a Landing Page Comercial"
           >
-            <Globe className="w-3.5 h-3.5 text-sky-400" />
+            <Globe className="w-4 h-4 text-sky-400" />
             <span>Landing Page</span>
           </button>
         )}
@@ -134,22 +127,22 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Quick Action Buttons */}
         <button
           onClick={onOpenNewPatientModal}
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+          className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
         >
-          <UserPlus className="w-3.5 h-3.5 text-emerald-400" />
+          <UserPlus className="w-4 h-4 text-emerald-400" />
           <span>Novo Paciente</span>
         </button>
 
         <button
           onClick={onOpenNewSessionModal}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-900/20 transition-colors"
         >
-          <CalendarPlus className="w-3.5 h-3.5" />
+          <CalendarPlus className="w-4 h-4" />
           <span>Agendar Sessão</span>
         </button>
 
         {/* Psychologist Profile Header Summary */}
-        <div className="h-6 w-px bg-slate-800 mx-1 hidden sm:block" />
+        <div className="h-6 w-px bg-slate-800 mx-1.5 hidden sm:block" />
 
         <button
           onClick={onOpenProfileModal}
@@ -176,10 +169,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         {onLogout && (
           <button
             onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-950/60 hover:bg-rose-900/90 text-rose-300 border border-rose-800/60 transition-all shadow-sm ml-1"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold bg-rose-950/60 hover:bg-rose-900/90 text-rose-300 border border-rose-800/60 transition-all shadow-sm ml-0.5"
             title="Sair da conta e voltar para a página inicial"
           >
-            <LogOut className="w-3.5 h-3.5 text-rose-400" />
+            <LogOut className="w-4 h-4 text-rose-400" />
             <span className="hidden sm:inline">Sair</span>
           </button>
         )}

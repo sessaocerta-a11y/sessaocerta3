@@ -232,9 +232,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentAccountEmail]);
 
+  // Helper for safe JSON stringification to prevent cyclic structure errors
+  const safeJsonStringify = (data: any): string => {
+    const cache = new WeakSet();
+    try {
+      return JSON.stringify(data, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) return undefined;
+          cache.add(value);
+        }
+        return value;
+      });
+    } catch {
+      return '[]';
+    }
+  };
+
   // Persist accounts to LocalStorage whenever accounts list changes
   useEffect(() => {
-    localStorage.setItem('sessao_certa_user_accounts', JSON.stringify(accounts));
+    try {
+      localStorage.setItem('sessao_certa_user_accounts', safeJsonStringify(accounts));
+    } catch (e) {
+      console.warn('Failed to persist accounts to localStorage:', e);
+    }
   }, [accounts]);
 
   // Persist currentAccountEmail to LocalStorage
@@ -312,15 +332,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Sync to LocalStorage
   useEffect(() => {
-    localStorage.setItem('sessao_certa_profile', JSON.stringify(profile));
+    try {
+      localStorage.setItem('sessao_certa_profile', safeJsonStringify(profile));
+    } catch (e) {
+      console.warn('Failed to persist profile:', e);
+    }
   }, [profile]);
 
   useEffect(() => {
-    localStorage.setItem('sessao_certa_patients', JSON.stringify(patients));
+    try {
+      localStorage.setItem('sessao_certa_patients', safeJsonStringify(patients));
+    } catch (e) {
+      console.warn('Failed to persist patients:', e);
+    }
   }, [patients]);
 
   useEffect(() => {
-    localStorage.setItem('sessao_certa_sessions', JSON.stringify(sessions));
+    try {
+      localStorage.setItem('sessao_certa_sessions', safeJsonStringify(sessions));
+    } catch (e) {
+      console.warn('Failed to persist sessions:', e);
+    }
   }, [sessions]);
 
   useEffect(() => {

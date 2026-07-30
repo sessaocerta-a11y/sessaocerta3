@@ -11,6 +11,30 @@ export interface LogEntry {
   meta?: Record<string, any>;
 }
 
+const safeStringify = (obj: any, space?: number): string => {
+  const cache = new WeakSet();
+  try {
+    return JSON.stringify(
+      obj,
+      (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) {
+            return '[Circular]';
+          }
+          cache.add(value);
+        }
+        if (typeof value === 'function') {
+          return '[Function]';
+        }
+        return value;
+      },
+      space
+    );
+  } catch (err) {
+    return '[Unserializable Object]';
+  }
+};
+
 class AppLogger {
   private logs: LogEntry[] = [];
   private maxLogsInMemory = 1000;
@@ -27,18 +51,19 @@ class AppLogger {
 
   private printToConsole(entry: LogEntry) {
     const prefix = `[${entry.timestamp}] [${entry.category}] [${entry.level.toUpperCase()}]:`;
+    const metaStr = entry.meta ? safeStringify(entry.meta, 2) : '';
     switch (entry.level) {
       case 'error':
-        console.error(`🚨 ${prefix} ${entry.message}`, entry.meta ? JSON.stringify(entry.meta, null, 2) : '');
+        console.error(`🚨 ${prefix} ${entry.message}`, metaStr);
         break;
       case 'warn':
-        console.warn(`⚠️ ${prefix} ${entry.message}`, entry.meta ? JSON.stringify(entry.meta, null, 2) : '');
+        console.warn(`⚠️ ${prefix} ${entry.message}`, metaStr);
         break;
       case 'audit':
-        console.log(`🔐 ${prefix} ${entry.message}`, entry.meta ? JSON.stringify(entry.meta, null, 2) : '');
+        console.log(`🔐 ${prefix} ${entry.message}`, metaStr);
         break;
       default:
-        console.log(`ℹ️ ${prefix} ${entry.message}`, entry.meta ? JSON.stringify(entry.meta, null, 2) : '');
+        console.log(`ℹ️ ${prefix} ${entry.message}`, metaStr);
     }
   }
 

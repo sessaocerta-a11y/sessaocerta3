@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import {
   Lock,
@@ -355,13 +356,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </button>
 
         {/* Header Branding */}
-        <div className="p-6 bg-gradient-to-b from-slate-950 to-slate-900 border-b border-slate-800 text-center space-y-2 pt-8">
-          <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center shadow-lg shadow-emerald-950/50">
-            <Sparkles className="w-6 h-6 text-white" />
+        <div className="p-6 bg-gradient-to-b from-slate-950 to-slate-900 border-b border-slate-800 text-center space-y-3 pt-8">
+          <div className="flex justify-center">
+            <Logo size="lg" variant="dark" />
           </div>
-          <h2 className="text-xl font-extrabold text-white tracking-tight">
-            Sessão Certa
-          </h2>
           <p className="text-xs text-slate-400">
             {mode === 'register' && 'Crie sua conta profissional com login e senha reais'}
             {mode === 'login' && 'Bem-vindo de volta ao seu consultório digital'}

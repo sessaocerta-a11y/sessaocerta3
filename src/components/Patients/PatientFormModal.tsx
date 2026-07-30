@@ -30,6 +30,17 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
   const [initialAnamnesis, setInitialAnamnesis] = useState('');
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     if (patientToEdit) {
       setName(patientToEdit.name);
       setCpf(patientToEdit.cpf);
@@ -57,7 +68,7 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
       setPreferredSchedule('');
       setInitialAnamnesis('');
     }
-  }, [patientToEdit, profile.sessionDefaultPrice]);
+  }, [isOpen, patientToEdit, profile.sessionDefaultPrice]);
 
   if (!isOpen) return null;
 
@@ -105,7 +116,14 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
         <div className="p-6 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -115,8 +133,14 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
             </h2>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -274,8 +298,12 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
           <div className="p-4 bg-slate-950 border border-slate-800 flex items-center justify-between rounded-xl">
             <button
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
             >
               Cancelar
             </button>

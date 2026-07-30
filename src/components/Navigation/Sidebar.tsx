@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Menu Principal
           </div>
 
-          <nav className="space-y-1">
+          <nav className="space-y-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -125,13 +125,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onClick={() => handleSelect(item.id)}
                   className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-emerald-600/15 text-emerald-400 font-semibold border border-emerald-500/30'
+                      ? 'bg-emerald-600/15 text-emerald-400 font-semibold border border-emerald-500/30 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-3.5">
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <span className="truncate">{item.label}</span>
                   </div>
                   {item.badge !== undefined && (
                     <span

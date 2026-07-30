@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
 import { Session } from '../../types';
 import {
@@ -94,13 +95,7 @@ export const PatientConfirmationModal: React.FC<PatientConfirmationModalProps> =
         {/* Header Header */}
         <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
-              <CheckCircle2 className="w-4.5 h-4.5" />
-            </div>
-            <div>
-              <h3 className="text-xs font-extrabold text-white">Sessão Certa — Confirmação</h3>
-              <p className="text-[10px] text-slate-400 font-mono">https://sessaocerta.com/c/{secureToken}</p>
-            </div>
+            <Logo size="sm" variant="dark" />
           </div>
           <button
             onClick={onClose}
