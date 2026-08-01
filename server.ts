@@ -90,8 +90,8 @@ Quando alguém solicitar uma avaliação psicológica ou orientação clínica, 
           if (response && response.text) {
             return res.json({ text: response.text });
           }
-        } catch (genAiError: any) {
-          console.warn('Chamada da API Gemini indisponível ou negada (Clara utilizando inteligência local de fallback):', genAiError?.message || genAiError);
+        } catch (_err) {
+          // Gemini API external access unavailable or key restricted; fall back gracefully to Clara's local intelligence
         }
       }
 
@@ -145,8 +145,8 @@ Tom desejado: ${tone} (opções: profissional, amigavel, formal)`,
           if (response && response.text) {
             return res.json({ message: response.text });
           }
-        } catch (genAiError: any) {
-          console.warn('Chamada Gemini message-generator falhou, utilizando fallback:', genAiError?.message);
+        } catch (_err) {
+          // Fallback to local template
         }
       }
 
@@ -189,8 +189,8 @@ Pendentes: ${pendingCount || 0}`,
           if (response && response.text) {
             return res.json({ briefing: response.text });
           }
-        } catch (genAiError: any) {
-          console.warn('Chamada Gemini daily-briefing falhou, utilizando fallback:', genAiError?.message);
+        } catch (_err) {
+          // Fallback to local briefing
         }
       }
 
