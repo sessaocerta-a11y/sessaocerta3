@@ -821,26 +821,26 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
         </section>
 
         {/* =================================================================== */}
-        {/* SEÇÃO DEDICADA À INTELIGÊNCIA ARTIFICIAL ÉTICA */}
+        {/* SEÇÃO DEDICADA À INTELIGÊNCIA ARTIFICIAL ÉTICA (CLARA) */}
         {/* =================================================================== */}
-        <section id="ia-copilot" className="p-8 md:p-12 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-purple-950/40 border border-purple-500/30 space-y-8 scroll-mt-24 shadow-2xl relative overflow-hidden">
+        <section id="ia-copilot" className="p-8 md:p-12 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/40 border border-emerald-500/30 space-y-8 scroll-mt-24 shadow-2xl relative overflow-hidden">
           {/* Light Glow background */}
-          <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/10 blur-[120px] pointer-events-none rounded-full" />
+          <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 blur-[120px] pointer-events-none rounded-full" />
 
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8 border-b border-slate-800 pb-8">
             <div className="space-y-3 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 text-xs font-bold">
-                <Brain className="w-3.5 h-3.5 text-purple-400" />
-                <span>Inteligência Artificial Ética e Responsável</span>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                <Brain className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Conheça a Clara | Assistente Virtual Inteligente</span>
               </div>
               <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">
-                Um assistente para a sua organização — com total respeito à sua autonomia clínica.
+                "Clara, organize minha agenda" — Sua secretária inteligente com total respeito à conduta clínica.
               </h2>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-950/80 border border-purple-500/30 max-w-md text-xs text-purple-200/90 leading-relaxed">
+            <div className="p-4 rounded-2xl bg-slate-950/80 border border-emerald-500/30 max-w-md text-xs text-emerald-200/90 leading-relaxed">
               <p>
-                <strong>Compromisso Ético Sessão Certa:</strong> A IA da plataforma foi projetada estritamente para agilizar tarefas burocráticas e organizacionais pós-sessão. <strong>Ela jamais emite diagnósticos, formula pareceres ou interfere na escuta terapêutica única da psicologia.</strong>
+                <strong>Compromisso Ético & Identidade da Clara:</strong> A Clara é a assistente inteligente oficial do Sessão Certa. <strong>Ela auxilia exclusivamente com horários, pacientes e organização administrativa — jamais realiza atendimentos ou diagnósticos clínicos.</strong>
               </p>
             </div>
           </div>

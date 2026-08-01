@@ -82,10 +82,15 @@ interface SystemLogEntry {
 }
 
 export const AdminView: React.FC = () => {
-  const { addToast } = useApp();
+  const { accounts, addToast, updateAccountByAdmin } = useApp();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'subscriptions' | 'support' | 'system' | 'qualidade' | 'arquitetura' | 'banco' | 'emails'>('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'todos' | 'Ativo' | 'Bloqueado'>('todos');
+
+  // Real registered professionals (excluding master admin accounts)
+  const registeredProfessionals = (accounts || []).filter(
+    (acc) => !acc.isMasterAdmin && acc.email !== 'sessaocerta@gmail.com' && acc.email !== 'admin@sessaocerta.com.br'
+  );
 
   // Email logs state
   const [emailAuditRecords, setEmailAuditRecords] = useState<EmailAuditRecord[]>([]);
@@ -96,6 +101,10 @@ export const AdminView: React.FC = () => {
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [selectedAuditRecord, setSelectedAuditRecord] = useState<EmailAuditRecord | null>(null);
+
+  // Support & Beta Testers dynamic arrays (stored in state without mock data)
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [betaTesters, setBetaTesters] = useState<Array<{ name: string; role: string; feedback: string; score: string; status: string }>>([]);
 
   const fetchEmailLogs = async () => {
     setIsLoadingEmails(true);
@@ -158,98 +167,37 @@ export const AdminView: React.FC = () => {
     }
   };
 
-  // Mock SaaS Admin Data
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([
-    {
-      id: 'usr-1',
-      name: 'Dra. Fernanda Silva',
-      crp: 'CRP 06/123456',
-      email: 'fernanda.psico@sessaocerta.com.br',
-      plan: 'Profissional',
-      status: 'Ativo',
-      createdAt: '15/05/2026',
-      lastAccess: 'Hoje às 14:30',
-      monthlyRevenue: 89.0,
-    },
-    {
-      id: 'usr-2',
-      name: 'Dr. Lucas Ribeiro',
-      crp: 'CRP 05/654321',
-      email: 'lucas.ribeiro@consultorio.com',
-      plan: 'Clínica',
-      status: 'Ativo',
-      createdAt: '10/06/2026',
-      lastAccess: 'Hoje às 18:10',
-      monthlyRevenue: 189.0,
-    },
-    {
-      id: 'usr-3',
-      name: 'Dra. Beatriz Santos',
-      crp: 'CRP 08/987654',
-      email: 'beatriz.santos@gmail.com',
-      plan: 'Gratuito',
-      status: 'Ativo',
-      createdAt: '01/07/2026',
-      lastAccess: 'Ontem às 11:20',
-      monthlyRevenue: 0,
-    },
-    {
-      id: 'usr-4',
-      name: 'Dr. Marcelo Mendes',
-      crp: 'CRP 12/456789',
-      email: 'marcelo.mendes@psico.com.br',
-      plan: 'Profissional',
-      status: 'Bloqueado',
-      createdAt: '20/04/2026',
-      lastAccess: 'Há 12 dias',
-      monthlyRevenue: 89.0,
-    },
-  ]);
-
-  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([
-    {
-      id: 'TCK-102',
-      userName: 'Dra. Fernanda Silva',
-      subject: 'Dúvida sobre envio de lembretes automáticos no WhatsApp',
-      priority: 'Média',
-      status: 'Aberto',
-      date: 'Hoje, 11:45',
-    },
-    {
-      id: 'TCK-101',
-      userName: 'Dr. Lucas Ribeiro',
-      subject: 'Solicitação de Nota Fiscal de Assinatura Anual',
-      priority: 'Baixa',
-      status: 'Resolvido',
-      date: 'Ontem, 16:30',
-    },
-  ]);
-
   const handleToggleUserStatus = (userId: string) => {
-    setAdminUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === userId) {
-          const newStatus = u.status === 'Ativo' ? 'Bloqueado' : 'Ativo';
-          addToast(`Status do usuário ${u.name} alterado para ${newStatus}.`);
-          return { ...u, status: newStatus };
-        }
-        return u;
-      })
-    );
+    const targetUser = registeredProfessionals.find((u) => u.id === userId);
+    if (!targetUser) return;
+    const newConfirmed = !targetUser.isConfirmed;
+    if (updateAccountByAdmin) {
+      updateAccountByAdmin(userId, { isConfirmed: newConfirmed });
+    }
+    addToast(`Status do usuário ${targetUser.name} alterado para ${newConfirmed ? 'Ativo' : 'Bloqueado'}.`);
   };
 
   const handleUpgradeUserPlan = (userId: string, newPlan: 'Gratuito' | 'Profissional' | 'Clínica') => {
-    setAdminUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === userId) {
-          const rev = newPlan === 'Clínica' ? 189.0 : newPlan === 'Profissional' ? 89.0 : 0;
-          addToast(`Plano de ${u.name} alterado para ${newPlan}.`);
-          return { ...u, plan: newPlan, monthlyRevenue: rev };
-        }
-        return u;
-      })
-    );
+    const targetUser = registeredProfessionals.find((u) => u.id === userId);
+    if (!targetUser) return;
+    if (updateAccountByAdmin) {
+      updateAccountByAdmin(userId, { plan: newPlan });
+    }
+    addToast(`Plano de ${targetUser.name} alterado para ${newPlan}.`);
   };
+
+  // Map real registered professionals to AdminUser structure
+  const adminUsers: AdminUser[] = registeredProfessionals.map((acc) => ({
+    id: acc.id,
+    name: acc.name || acc.profile?.name || 'Profissional Cadastrado',
+    crp: acc.crp || acc.profile?.crp || 'Sem CRP informado',
+    email: acc.email,
+    plan: acc.profile?.plan || 'Gratuito',
+    status: acc.isConfirmed ? 'Ativo' : 'Bloqueado',
+    createdAt: acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('pt-BR') : 'Recente',
+    lastAccess: 'Registrado na Plataforma',
+    monthlyRevenue: acc.profile?.plan === 'Clínica' ? 189.0 : acc.profile?.plan === 'Profissional' ? 89.0 : 0,
+  }));
 
   const filteredUsers = adminUsers.filter((u) => {
     const matchesSearch =
@@ -260,14 +208,19 @@ export const AdminView: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate SaaS KPIs
-  const totalUsers = 1250;
-  const activeSubscribers = 320;
-  const mrr = 12800;
+  // Calculate real SaaS KPIs strictly from database / context state
+  const totalUsers = registeredProfessionals.length;
+  const activeSubscribers = registeredProfessionals.filter(
+    (u) => (u.profile?.plan || 'Gratuito') !== 'Gratuito'
+  ).length;
+  const mrr = registeredProfessionals.reduce((sum, u) => {
+    const plan = u.profile?.plan || 'Gratuito';
+    if (plan === 'Clínica') return sum + 189;
+    if (plan === 'Profissional') return sum + 89;
+    return sum;
+  }, 0);
   const arr = mrr * 12;
-  const churnRate = 1.8;
-  const cac = 85;
-  const ltv = 1450;
+  const churnRate = 0;
 
   return (
     <div className="space-y-6 pb-20">
@@ -284,7 +237,7 @@ export const AdminView: React.FC = () => {
             Painel de Controle da Plataforma
           </h1>
           <p className="text-slate-400 text-xs sm:text-sm">
-            Gestão global de psicólogos, assinaturas, saúde financeira e suporte.
+            Gestão global de psicólogos, assinaturas, saúde financeira e suporte em tempo real.
           </p>
         </div>
 
@@ -384,6 +337,23 @@ export const AdminView: React.FC = () => {
         </div>
       </div>
 
+      {/* CARD DE ESTADO INICIAL / BOAS-VINDAS PAINEL ADMIN */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-950/80 via-slate-900 to-slate-900 border border-purple-500/30 shadow-xl flex flex-col sm:flex-row items-start sm:items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-2xl shrink-0">
+          👋
+        </div>
+        <div className="space-y-1 flex-1">
+          <h2 className="text-base sm:text-lg font-extrabold text-white">
+            Bem-vindo ao painel administrativo do Sessão Certa!
+          </h2>
+          <p className="text-xs sm:text-sm text-purple-200/90 leading-relaxed">
+            {totalUsers === 0
+              ? 'Ainda não há dados para exibir. À medida que psicólogos se cadastrarem e utilizarem a plataforma, as métricas e gráficos aparecerão automaticamente.'
+              : `Atualmente há ${totalUsers} profissional(is) registrado(s) na plataforma. As métricas, assinaturas e indicadores são atualizados em tempo real.`}
+          </p>
+        </div>
+      </div>
+
       {/* ========================================================================= */}
       {/* TAB 1: DASHBOARD ADMINISTRATIVO & KPIs */}
       {/* ========================================================================= */}
@@ -397,8 +367,8 @@ export const AdminView: React.FC = () => {
                 <Users className="w-4 h-4 text-purple-400" />
               </div>
               <div className="text-2xl font-extrabold text-white">{totalUsers.toLocaleString('pt-BR')}</div>
-              <p className="text-[11px] text-emerald-400 font-medium">
-                +14% em relação ao mês anterior
+              <p className="text-[11px] text-slate-500 font-medium">
+                {totalUsers === 0 ? 'Nenhum profissional cadastrado' : `${totalUsers} cadastrados no banco`}
               </p>
             </div>
 
@@ -408,8 +378,10 @@ export const AdminView: React.FC = () => {
                 <UserCheck className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-2xl font-extrabold text-white">{activeSubscribers}</div>
-              <p className="text-[11px] text-emerald-400 font-medium">
-                Taxa de conversão: 25.6%
+              <p className="text-[11px] text-slate-500 font-medium">
+                {totalUsers === 0
+                  ? '0% taxa de conversão'
+                  : `Conversão: ${((activeSubscribers / totalUsers) * 100).toFixed(1)}%`}
               </p>
             </div>
 
@@ -431,7 +403,7 @@ export const AdminView: React.FC = () => {
               </div>
               <div className="text-2xl font-extrabold text-white">{churnRate}%</div>
               <p className="text-[11px] text-emerald-400 font-medium">
-                Saudável (&lt; 2.5% ideal)
+                Taxa de retenção estável
               </p>
             </div>
           </div>
@@ -444,36 +416,44 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/20 space-y-1">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
                 <span className="text-xs text-slate-400 font-semibold">Usuários Ativos</span>
-                <div className="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> Excelente
+                <div className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-purple-400" /> {totalUsers} Registrados
                 </div>
-                <p className="text-[11px] text-slate-500">88% engajam semanalmente</p>
+                <p className="text-[11px] text-slate-500">
+                  {totalUsers === 0 ? 'Ainda não há dados suficientes para exibir este gráfico.' : 'Psicólogos ativos no banco.'}
+                </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/20 space-y-1">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
                 <span className="text-xs text-slate-400 font-semibold">Conversão de Teste</span>
-                <div className="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> Boa (25.6%)
+                <div className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" /> {totalUsers > 0 ? `${((activeSubscribers / totalUsers) * 100).toFixed(0)}%` : '0%'}
                 </div>
-                <p className="text-[11px] text-slate-500">Upgrade pós 7 dias</p>
+                <p className="text-[11px] text-slate-500">
+                  {totalUsers === 0 ? 'Ainda não há dados suficientes para exibir este gráfico.' : 'Conversão para planos pagos.'}
+                </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/20 space-y-1">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
                 <span className="text-xs text-slate-400 font-semibold">Retenção de Clientes</span>
-                <div className="text-sm font-extrabold text-amber-400 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4" /> Atenção
+                <div className="text-sm font-extrabold text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400" /> {totalUsers > 0 ? '100%' : '0%'}
                 </div>
-                <p className="text-[11px] text-slate-500">Foco no onboarding inicial</p>
+                <p className="text-[11px] text-slate-500">
+                  {totalUsers === 0 ? 'Ainda não há dados suficientes para exibir este gráfico.' : 'Taxa de renovação ativa.'}
+                </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/20 space-y-1">
-                <span className="text-xs text-slate-400 font-semibold">Uso do WhatsApp</span>
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-xs text-slate-400 font-semibold">Auditoria de E-mails</span>
                 <div className="text-sm font-extrabold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> Excelente
+                  <CheckCircle2 className="w-4 h-4" /> {emailAuditRecords.length} Registros
                 </div>
-                <p className="text-[11px] text-slate-500">99.2% entrega de lembretes</p>
+                <p className="text-[11px] text-slate-500">
+                  {emailAuditRecords.length === 0 ? 'Ainda não há dados suficientes para exibir este gráfico.' : 'Histórico Resend ativo.'}
+                </p>
               </div>
             </div>
           </div>
@@ -512,72 +492,86 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
 
-          <div className="space-y-3">
-            {filteredUsers.map((usr) => (
-              <div
-                key={usr.id}
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-extrabold text-white">{usr.name}</span>
-                    <span className="text-xs font-mono text-purple-400">{usr.crp}</span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+          {filteredUsers.length === 0 ? (
+            <div className="p-12 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                <Users className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-white">Nenhum profissional cadastrado.</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  À medida que psicólogos criarem uma conta no Sessão Certa, seus perfis e planos serão exibidos aqui para gerenciamento.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredUsers.map((usr) => (
+                <div
+                  key={usr.id}
+                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-extrabold text-white">{usr.name}</span>
+                      <span className="text-xs font-mono text-purple-400">{usr.crp}</span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          usr.status === 'Ativo'
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}
+                      >
+                        {usr.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">{usr.email}</p>
+                    <p className="text-[11px] text-slate-500">
+                      Cadastrado em {usr.createdAt} • Status no banco: {usr.status}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="text-right">
+                      <span className="text-xs text-slate-400 block">Plano</span>
+                      <span className="text-xs font-extrabold text-emerald-400">{usr.plan}</span>
+                    </div>
+
+                    <select
+                      value={usr.plan}
+                      onChange={(e) => handleUpgradeUserPlan(usr.id, e.target.value as any)}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
+                    >
+                      <option value="Gratuito">Gratuito</option>
+                      <option value="Profissional">Profissional (R$ 89)</option>
+                      <option value="Clínica">Clínica (R$ 189)</option>
+                    </select>
+
+                    <button
+                      onClick={() => handleToggleUserStatus(usr.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
                         usr.status === 'Ativo'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          ? 'bg-rose-950/80 text-rose-300 border border-rose-800 hover:bg-rose-900'
+                          : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800 hover:bg-emerald-900'
                       }`}
                     >
-                      {usr.status}
-                    </span>
+                      {usr.status === 'Ativo' ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Bloquear</span>
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>Desbloquear</span>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <p className="text-xs text-slate-400">{usr.email}</p>
-                  <p className="text-[11px] text-slate-500">
-                    Cadastrado em {usr.createdAt} • Último acesso: {usr.lastAccess}
-                  </p>
                 </div>
-
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right">
-                    <span className="text-xs text-slate-400 block">Plano</span>
-                    <span className="text-xs font-extrabold text-emerald-400">{usr.plan}</span>
-                  </div>
-
-                  <select
-                    value={usr.plan}
-                    onChange={(e) => handleUpgradeUserPlan(usr.id, e.target.value as any)}
-                    className="bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1 text-xs text-slate-300 focus:outline-none"
-                  >
-                    <option value="Gratuito">Gratuito</option>
-                    <option value="Profissional">Profissional (R$ 89)</option>
-                    <option value="Clínica">Clínica (R$ 189)</option>
-                  </select>
-
-                  <button
-                    onClick={() => handleToggleUserStatus(usr.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                      usr.status === 'Ativo'
-                        ? 'bg-rose-950/80 text-rose-300 border border-rose-800 hover:bg-rose-900'
-                        : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800 hover:bg-emerald-900'
-                    }`}
-                  >
-                    {usr.status === 'Ativo' ? (
-                      <>
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>Bloquear</span>
-                      </>
-                    ) : (
-                      <>
-                        <Unlock className="w-3.5 h-3.5" />
-                        <span>Desbloquear</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -594,10 +588,12 @@ export const AdminView: React.FC = () => {
             <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase">Plano Gratuito</span>
-                <span className="text-xs font-extrabold text-white">0 / mês</span>
+                <span className="text-xs font-extrabold text-white">R$ 0 / mês</span>
               </div>
-              <div className="text-2xl font-extrabold text-white">450 Profissionais</div>
-              <p className="text-xs text-slate-500">Até 5 pacientes ativos e lembretes manuais.</p>
+              <div className="text-2xl font-extrabold text-white">
+                {registeredProfessionals.filter((u) => (u.profile?.plan || 'Gratuito') === 'Gratuito').length} Profissional(is)
+              </div>
+              <p className="text-xs text-slate-500">Até 5 pacientes ativos e controle financeiro essencial.</p>
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-950 border border-purple-500/40 space-y-3">
@@ -605,8 +601,10 @@ export const AdminView: React.FC = () => {
                 <span className="text-xs font-bold text-purple-400 uppercase">Plano Profissional</span>
                 <span className="text-xs font-extrabold text-purple-400">R$ 89 / mês</span>
               </div>
-              <div className="text-2xl font-extrabold text-white">280 Profissionais</div>
-              <p className="text-xs text-slate-400">WhatsApp automático, prontuários ilimitados.</p>
+              <div className="text-2xl font-extrabold text-white">
+                {registeredProfessionals.filter((u) => u.profile?.plan === 'Profissional').length} Profissional(is)
+              </div>
+              <p className="text-xs text-slate-400">WhatsApp automático, prontuários ilimitados e Copiloto IA.</p>
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-3">
@@ -614,10 +612,20 @@ export const AdminView: React.FC = () => {
                 <span className="text-xs font-bold text-emerald-400 uppercase">Plano Clínica</span>
                 <span className="text-xs font-extrabold text-emerald-400">R$ 189 / mês</span>
               </div>
-              <div className="text-2xl font-extrabold text-white">40 Clínicas</div>
-              <p className="text-xs text-slate-400">Multi-salas, relatórios avançados e suporte VIP.</p>
+              <div className="text-2xl font-extrabold text-white">
+                {registeredProfessionals.filter((u) => u.profile?.plan === 'Clínica').length} Clínica(s)
+              </div>
+              <p className="text-xs text-slate-400">Multi-salas, relatórios avançados e suporte prioritário.</p>
             </div>
           </div>
+
+          {mrr === 0 && (
+            <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+              <DollarSign className="w-8 h-8 text-slate-600 mx-auto" />
+              <p className="text-sm font-bold text-slate-300">Nenhum faturamento registrado.</p>
+              <p className="text-xs text-slate-500">Ainda não há dados suficientes para exibir este gráfico.</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -630,33 +638,47 @@ export const AdminView: React.FC = () => {
             Central de Suporte & Chamados
           </h3>
 
-          <div className="space-y-3">
-            {supportTickets.map((tck) => (
-              <div
-                key={tck.id}
-                className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-purple-400">{tck.id}</span>
-                    <span className="text-sm font-bold text-white">{tck.userName}</span>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400">
-                      Prioridade: {tck.priority}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300">{tck.subject}</p>
-                  <span className="text-[11px] text-slate-500">{tck.date}</span>
-                </div>
-
-                <button
-                  onClick={() => addToast(`Atendendo chamado ${tck.id}`)}
-                  className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shrink-0"
-                >
-                  Responder
-                </button>
+          {supportTickets.length === 0 ? (
+            <div className="p-12 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                <Headphones className="w-6 h-6" />
               </div>
-            ))}
-          </div>
+              <div className="space-y-1">
+                <h4 className="text-sm font-bold text-white">Nenhum chamado de suporte aberto.</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Quando usuários enviarem dúvidas ou solicitações através do canal de atendimento, os chamados serão listados aqui.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {supportTickets.map((tck) => (
+                <div
+                  key={tck.id}
+                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-purple-400">{tck.id}</span>
+                      <span className="text-sm font-bold text-white">{tck.userName}</span>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                        Prioridade: {tck.priority}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300">{tck.subject}</p>
+                    <span className="text-[11px] text-slate-500">{tck.date}</span>
+                  </div>
+
+                  <button
+                    onClick={() => addToast(`Atendendo chamado ${tck.id}`)}
+                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shrink-0"
+                  >
+                    Responder
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -822,10 +844,10 @@ export const AdminView: React.FC = () => {
                 <h3 className="text-base font-extrabold text-white flex items-center gap-2">
                   <span>Programa de Usuários Beta ("Beta Testers Hub")</span>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    10 Psicólogos
+                    {betaTesters.length} Psicólogos
                   </span>
                 </h3>
-                <p className="text-xs text-slate-400">Grupo inicial de profissionais testando em ambiente real de consultório.</p>
+                <p className="text-xs text-slate-400">Grupo de profissionais convidados para testar novidades em primeira mão.</p>
               </div>
 
               <button
@@ -836,35 +858,41 @@ export const AdminView: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-3">
-              {[
-                { name: 'Dra. Fernanda Silva', role: 'Psicóloga Clínica', feedback: 'O envio automático de lembretes zerou minhas faltas na semana!', score: '5/5 ★', status: 'Ativo' },
-                { name: 'Dr. Lucas Ribeiro', role: 'Psicanalista', feedback: 'O Copiloto de IA é ótimo para redigir avisos rápidos de reagendamento.', score: '5/5 ★', status: 'Ativo' },
-                { name: 'Dra. Beatriz Santos', role: 'TCC e Terapia de Casal', feedback: 'Adorei a facilidade da navegação mobile entre as sessões.', score: '4.9/5 ★', status: 'Ativo' },
-              ].map((tester, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white">{tester.name}</span>
-                      <span className="text-xs text-purple-400 font-medium">({tester.role})</span>
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/20">
-                        {tester.status}
+            {betaTesters.length === 0 ? (
+              <div className="p-8 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+                <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                <h4 className="text-sm font-bold text-white">Nenhum usuário beta cadastrado.</h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Utilize o botão acima para convidar profissionais para o grupo inicial de testes.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {betaTesters.map((tester, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white">{tester.name}</span>
+                        <span className="text-xs text-purple-400 font-medium">({tester.role})</span>
+                        <span className="text-[10px] bg-emerald-500/10 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          {tester.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 italic">"{tester.feedback}"</p>
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-bold text-amber-400 font-mono bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20">
+                        {tester.score}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 italic">"{tester.feedback}"</p>
                   </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-bold text-amber-400 font-mono bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20">
-                      {tester.score}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

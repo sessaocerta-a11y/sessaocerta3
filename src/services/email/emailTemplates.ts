@@ -47,28 +47,24 @@ function renderBaseTemplate(title: string, bodyContent: string): string {
       text-align: center;
       border-bottom: 1px solid #065f46;
     }
-    .brand-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 54px;
-      height: 54px;
-      background: #10b981;
-      border-radius: 16px;
-      margin-bottom: 12px;
-      box-shadow: 0 10px 20px -3px rgba(16, 185, 129, 0.35);
+    .brand-logo-container {
+      margin-bottom: 10px;
+      display: inline-block;
     }
     .brand-title {
       font-size: 26px;
       font-weight: 800;
       color: #ffffff;
       letter-spacing: -0.5px;
+      margin-top: 4px;
     }
     .brand-tagline {
-      font-size: 13px;
+      font-size: 11px;
       color: #a7f3d0;
-      margin-top: 4px;
-      font-weight: 500;
+      margin-top: 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
     }
     .content-body {
       padding: 36px 32px;
@@ -148,11 +144,53 @@ function renderBaseTemplate(title: string, bodyContent: string): string {
 <body>
   <div class="email-container">
     <div class="header">
-      <div class="brand-badge">
-        <span style="font-size: 28px; color: #ffffff;">❖</span>
+      <div style="text-align: center; margin: 0 auto;">
+        <a href="${APP_URL}" target="_blank" style="text-decoration: none; display: inline-block;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin: 0 auto; text-align: center;">
+            <tr>
+              <td style="vertical-align: middle; padding-right: 14px;">
+                <!-- Official S Ribbon Emblem -->
+                <svg width="54" height="54" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; margin: 0 auto;">
+                  <defs>
+                    <linearGradient id="scBlueGradEmail" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#3B82F6" />
+                      <stop offset="50%" stop-color="#2563EB" />
+                      <stop offset="100%" stop-color="#1D4ED8" />
+                    </linearGradient>
+                    <linearGradient id="scGreenGradEmail" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#34D399" />
+                      <stop offset="50%" stop-color="#10B981" />
+                      <stop offset="100%" stop-color="#059669" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M 75 22 C 50 22 26 30 26 50 C 26 62 36 72 50 82 L 62 90 C 72 96 82 98 82 90 C 82 82 72 74 62 66 C 50 56 42 48 42 38 C 42 30 54 28 68 28 C 76 28 85 30 85 22 Z" fill="url(#scBlueGradEmail)" />
+                  <circle cx="48" cy="38" r="9" fill="url(#scBlueGradEmail)" />
+                  <path d="M 45 98 C 70 98 94 90 94 70 C 94 58 84 48 70 38 L 58 30 C 48 24 38 22 38 30 C 38 38 48 46 58 54 C 70 64 78 72 78 82 C 78 90 66 92 52 92 C 44 92 35 90 35 98 Z" fill="url(#scGreenGradEmail)" />
+                  <circle cx="72" cy="82" r="9" fill="url(#scGreenGradEmail)" />
+                  <path d="M 50 59 L 57 66 L 70 51" stroke="#34D399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </td>
+              <td style="vertical-align: middle; text-align: left;">
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 28px; line-height: 1.05; letter-spacing: -0.5px;">
+                  <span style="color: #ffffff; font-weight: 800; display: block;">Sessão</span>
+                  <span style="color: #34d399; font-weight: 900; display: block;">Certa</span>
+                </div>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Official Tagline Dividers & Text -->
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 14px;">
+            <tr>
+              <td style="border-bottom: 1px solid #047857; width: 20px;"></td>
+              <td style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 600; color: #a7f3d0; text-transform: uppercase; letter-spacing: 0.8px; padding: 0 10px; text-align: center; white-space: nowrap;">
+                Tecnologia que organiza o cuidado humano
+              </td>
+              <td style="border-bottom: 1px solid #047857; width: 20px;"></td>
+            </tr>
+          </table>
+        </a>
       </div>
-      <div class="brand-title">Sessão Certa</div>
-      <div class="brand-tagline">Gestão Inteligente para Consultórios de Psicologia</div>
     </div>
 
     <div class="content-body">
@@ -181,7 +219,7 @@ function renderBaseTemplate(title: string, bodyContent: string): string {
  */
 export function getWelcomeEmailTemplate(opts: WelcomeEmailOptions): RenderedEmailTemplate {
   const loginUrl = opts.loginUrl || `${APP_URL}/login`;
-  const subject = 'Bem-vindo ao Sessão Certa ❖';
+  const subject = 'Bem-vindo ao Sessão Certa';
 
   const html = renderBaseTemplate(
     subject,

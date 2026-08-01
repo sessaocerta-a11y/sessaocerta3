@@ -45,17 +45,17 @@ export const CopilotWidget: React.FC = () => {
     {
       id: 'msg-1',
       sender: 'ai',
-      text: `Olá, ${profile.name || 'Dra. Fernanda'}! 🤖 Sou o **Copiloto do Sessão Certa**.\n\nComo posso ajudar seu consultório hoje? Você pode me perguntar sobre sua agenda, solicitar lembretes para pacientes ou pedir ideias para otimizar seus horários.`,
+      text: `Olá, ${profile.name || 'Dra. Fernanda'}! 🌸 Eu sou a Clara, sua assistente inteligente do Sessão Certa. Estou aqui para ajudar você a organizar sua rotina clínica, seus atendimentos e suas tarefas de forma simples e eficiente.`,
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
 
   const quickPrompts = [
-    'Minha agenda está cheia essa semana?',
-    'Quantos pacientes confirmaram hoje?',
+    'Clara, quais pacientes tenho hoje?',
+    'Clara, me ajude a organizar minha semana.',
     'Quem precisa de lembrete WhatsApp?',
-    'Quantos horários livres tenho amanhã?',
-    'Gere uma mensagem para avisar alteração de horário',
+    'Quantas sessões estão pendentes?',
+    'Sugira uma mensagem de reagendamento',
   ];
 
   useEffect(() => {
@@ -114,7 +114,7 @@ export const CopilotWidget: React.FC = () => {
         {
           id: `ai-err-${Date.now()}`,
           sender: 'ai',
-          text: '🤖 Tive uma oscilação de conexão, mas posso te adiantar: você possui ' + todaySessions.length + ' sessões hoje, sendo ' + confirmedCount + ' confirmadas.',
+          text: '🌸 Tive uma oscilação pontual de conexão, mas estou aqui! Você possui ' + todaySessions.length + ' sessões agendadas para hoje, sendo ' + confirmedCount + ' confirmadas.',
           timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
@@ -137,17 +137,17 @@ export const CopilotWidget: React.FC = () => {
             setIsOpen(true);
             setIsMinimized(false);
           }}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-full shadow-2xl shadow-purple-950/80 border border-purple-400/30 transition-all hover:scale-105 active:scale-95 group"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white rounded-full shadow-2xl shadow-emerald-950/80 border border-emerald-400/40 transition-all hover:scale-105 active:scale-95 group"
         >
           <div className="relative">
-            <Bot className="w-5 h-5 text-white animate-pulse" />
+            <Sparkles className="w-5 h-5 text-emerald-200 animate-pulse" />
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-900" />
           </div>
           <span className="text-xs font-extrabold tracking-wide hidden sm:inline">
-            Copiloto do Consultório
+            Falar com a Clara
           </span>
-          <span className="text-[10px] bg-purple-950/80 px-2 py-0.5 rounded-full border border-purple-400/30 font-mono">
-            IA
+          <span className="text-[10px] bg-slate-950/80 px-2 py-0.5 rounded-full border border-emerald-400/30 font-semibold text-emerald-300">
+            IA Clara
           </span>
         </button>
       )}
@@ -155,7 +155,7 @@ export const CopilotWidget: React.FC = () => {
       {/* Floating Chat Drawer Container */}
       {isOpen && (
         <div
-          className={`fixed bottom-6 right-6 z-50 bg-slate-900 border border-purple-500/30 rounded-3xl shadow-2xl shadow-purple-950/90 flex flex-col transition-all duration-300 overflow-hidden ${
+          className={`fixed bottom-6 right-6 z-50 bg-slate-900 border border-emerald-500/30 rounded-3xl shadow-2xl shadow-slate-950/90 flex flex-col transition-all duration-300 overflow-hidden ${
             isMinimized
               ? 'w-80 h-16'
               : 'w-88 sm:w-96 h-[520px] max-h-[85vh]'
@@ -164,17 +164,17 @@ export const CopilotWidget: React.FC = () => {
           {/* Header */}
           <div className="p-3.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-purple-600/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-                <Bot className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-sm">
+                🌸
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-extrabold text-white">Copiloto do Consultório</h3>
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    Gemini 3.6
+                  <h3 className="text-xs font-extrabold text-white">Clara | Sessão Certa</h3>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Assistente IA
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-400">Assistente Administrativo Inteligente</p>
+                <p className="text-[10px] text-slate-400">Organização & Gestão de Consultório</p>
               </div>
             </div>
 
@@ -199,9 +199,9 @@ export const CopilotWidget: React.FC = () => {
           {!isMinimized && (
             <>
               {/* Disclaimer Ribbon */}
-              <div className="bg-purple-950/40 px-3.5 py-1.5 border-b border-purple-900/40 flex items-center gap-1.5 text-[10px] text-purple-300 shrink-0">
-                <ShieldAlert className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                <span>IA para auxílio administrativo. Não substitui avaliação clínica.</span>
+              <div className="bg-emerald-950/40 px-3.5 py-1.5 border-b border-emerald-900/40 flex items-center gap-1.5 text-[10px] text-emerald-300 shrink-0">
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Assistente de auxílio administrativo. Não realiza atendimentos clínicos.</span>
               </div>
 
               {/* Chat Message History */}
@@ -216,7 +216,7 @@ export const CopilotWidget: React.FC = () => {
                     <div
                       className={`max-w-[85%] rounded-2xl p-3 space-y-1 ${
                         msg.sender === 'user'
-                          ? 'bg-purple-600 text-white rounded-tr-none shadow-md'
+                          ? 'bg-emerald-600 text-white rounded-tr-none shadow-md'
                           : 'bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none shadow-sm'
                       }`}
                     >
@@ -226,7 +226,7 @@ export const CopilotWidget: React.FC = () => {
                         {msg.sender === 'ai' && (
                           <button
                             onClick={() => handleCopyText(msg.text)}
-                            className="hover:text-purple-300 transition-colors flex items-center gap-1"
+                            className="hover:text-emerald-300 transition-colors flex items-center gap-1"
                             title="Copiar texto"
                           >
                             <Copy className="w-2.5 h-2.5" /> Copiar
@@ -239,8 +239,8 @@ export const CopilotWidget: React.FC = () => {
 
                 {isLoading && (
                   <div className="flex items-center gap-2 text-slate-400 text-xs p-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                    <span>O Copiloto está analisando e respondendo...</span>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                    <span>A Clara está analisando seus dados e respondendo...</span>
                   </div>
                 )}
 
@@ -249,13 +249,13 @@ export const CopilotWidget: React.FC = () => {
 
               {/* Quick Prompt Chips */}
               <div className="p-2 bg-slate-950/60 border-t border-slate-800/80 flex items-center gap-1.5 overflow-x-auto scrollbar-none shrink-0">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0 ml-1" />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0 ml-1" />
                 {quickPrompts.map((qp, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSendMessage(qp)}
                     disabled={isLoading}
-                    className="whitespace-nowrap px-2.5 py-1 bg-slate-900 hover:bg-purple-950/80 border border-slate-800 hover:border-purple-500/40 text-[10px] text-slate-300 hover:text-purple-200 rounded-lg transition-all shrink-0"
+                    className="whitespace-nowrap px-2.5 py-1 bg-slate-900 hover:bg-emerald-950/80 border border-slate-800 hover:border-emerald-500/40 text-[10px] text-slate-300 hover:text-emerald-200 rounded-lg transition-all shrink-0"
                   >
                     {qp}
                   </button>
@@ -273,16 +273,16 @@ export const CopilotWidget: React.FC = () => {
                 >
                   <input
                     type="text"
-                    placeholder="Pergunte ao Copiloto..."
+                    placeholder="Pergunte à Clara... (ex: Clara, quais pacientes tenho hoje?)"
                     value={inputPrompt}
                     onChange={(e) => setInputPrompt(e.target.value)}
                     disabled={isLoading}
-                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     type="submit"
                     disabled={!inputPrompt.trim() || isLoading}
-                    className="p-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 text-white rounded-xl transition-all shadow-md shrink-0"
+                    className="p-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white rounded-xl transition-all shadow-md shrink-0"
                   >
                     <Send className="w-4 h-4" />
                   </button>

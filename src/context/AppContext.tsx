@@ -94,6 +94,7 @@ interface AppContextType {
   addToast: (message: string, type?: ToastMessage['type']) => void;
   removeToast: (id: string) => void;
 
+  updateAccountByAdmin?: (accountId: string, updates: { plan?: 'Gratuito' | 'Profissional' | 'Clínica'; isConfirmed?: boolean }) => void;
   // Demo & Clean State Management
   resetToDemoData: () => void;
   loadDemoData: () => void;
@@ -106,7 +107,7 @@ const defaultPreSeededAccounts: UserAccount[] = [
     name: 'Administrador Sessão Certa',
     email: 'sessaocerta@gmail.com',
     password: 'SC_Admin@2026!',
-    phone: '11999998888',
+    phone: '',
     crp: 'CRP-MASTER/01',
     isConfirmed: true,
     isMasterAdmin: true,
@@ -117,20 +118,20 @@ const defaultPreSeededAccounts: UserAccount[] = [
       name: 'Administrador Sessão Certa',
       email: 'sessaocerta@gmail.com',
       crp: 'CRP-MASTER/01',
-      phone: '11999998888',
+      phone: '',
       isMasterAdmin: true,
       isAdmin: true,
       role: 'Administrador SaaS'
     },
-    patients: initialPatients,
-    sessions: initialSessions
+    patients: [],
+    sessions: []
   },
   {
     id: 'acc-admin-mvp',
     name: 'Administrador SaaS',
     email: 'admin@sessaocerta.com.br',
     password: 'SC_Admin@2026!',
-    phone: '11999998888',
+    phone: '',
     crp: 'CRP-ADMIN/01',
     isConfirmed: true,
     isMasterAdmin: true,
@@ -141,36 +142,13 @@ const defaultPreSeededAccounts: UserAccount[] = [
       name: 'Administrador SaaS',
       email: 'admin@sessaocerta.com.br',
       crp: 'CRP-ADMIN/01',
-      phone: '11999998888',
+      phone: '',
       isMasterAdmin: true,
       isAdmin: true,
       role: 'Administrador SaaS'
     },
-    patients: initialPatients,
-    sessions: initialSessions
-  },
-  {
-    id: 'acc-demo-juliana',
-    name: 'Dra. Juliana Silva',
-    email: 'juliana@psicologia.com',
-    password: 'psico123',
-    phone: '11988887777',
-    crp: 'CRP 06/123456',
-    isConfirmed: true,
-    createdAt: '2026-01-01',
-    profile: {
-      ...defaultPsychologistProfile,
-      id: 'psi-juliana',
-      name: 'Dra. Juliana Silva',
-      email: 'juliana@psicologia.com',
-      crp: 'CRP 06/123456',
-      phone: '11988887777',
-      isMasterAdmin: false,
-      isAdmin: false,
-      role: 'Psicólogo(a)'
-    },
-    patients: initialPatients,
-    sessions: initialSessions
+    patients: [],
+    sessions: []
   }
 ];
 
@@ -184,14 +162,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Sync default pre-seeded admin accounts with updated passwords from code
-          return parsed.map((acc: UserAccount) => {
-            const preSeeded = defaultPreSeededAccounts.find((d) => d.email.toLowerCase() === acc.email.toLowerCase());
-            if (preSeeded && (acc.email.toLowerCase() === 'sessaocerta@gmail.com' || acc.email.toLowerCase() === 'admin@sessaocerta.com.br')) {
-              return { ...acc, password: preSeeded.password };
-            }
-            return acc;
-          });
+          // Filter out deleted demo accounts (Juliana) and sync pre-seeded admin passwords
+          return parsed
+            .filter((acc: UserAccount) => acc.email.toLowerCase() !== 'juliana@psicologia.com' && acc.id !== 'acc-demo-juliana')
+            .map((acc: UserAccount) => {
+              const preSeeded = defaultPreSeededAccounts.find((d) => d.email.toLowerCase() === acc.email.toLowerCase());
+              if (preSeeded && (acc.email.toLowerCase() === 'sessaocerta@gmail.com' || acc.email.toLowerCase() === 'admin@sessaocerta.com.br')) {
+                return { ...acc, password: preSeeded.password };
+              }
+              return acc;
+            });
         }
       } catch (e) {
         console.error('Error parsing saved accounts', e);
@@ -849,6 +829,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast('Pacientes e sessões de demonstração carregados com sucesso!', 'success');
   };
 
+  const updateAccountByAdmin = (
+    accountId: string,
+    updates: { plan?: 'Gratuito' | 'Profissional' | 'Clínica'; isConfirmed?: boolean }
+  ) => {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id === accountId) {
+          const updatedProfile = {
+            ...acc.profile,
+            plan: updates.plan ?? acc.profile?.plan ?? 'Gratuito',
+          };
+          return {
+            ...acc,
+            isConfirmed: updates.isConfirmed ?? acc.isConfirmed,
+            profile: updatedProfile,
+          };
+        }
+        return acc;
+      })
+    );
+  };
+
   const clearPatientsAndSessions = () => {
     setPatients([]);
     setSessions([]);
@@ -900,6 +902,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toasts,
         addToast,
         removeToast,
+        updateAccountByAdmin,
         resetToDemoData,
         loadDemoData,
         clearPatientsAndSessions,
