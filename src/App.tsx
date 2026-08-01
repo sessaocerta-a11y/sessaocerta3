@@ -57,6 +57,17 @@ function MainAppContent({
     }
   }, [isAdmin]);
 
+  // Listener para troca de abas via assistente Clara
+  React.useEffect(() => {
+    const handleSwitchTab = (e: any) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab);
+      }
+    };
+    window.addEventListener('switch-tab', handleSwitchTab);
+    return () => window.removeEventListener('switch-tab', handleSwitchTab);
+  }, []);
+
   const handleLogout = () => {
     logoutAccount();
     onGoToLanding();

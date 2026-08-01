@@ -22,7 +22,8 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  ExternalLink
+  ExternalLink,
+  MapPin
 } from 'lucide-react';
 
 interface PatientsViewProps {
@@ -48,6 +49,23 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<PatientStatus | 'todos'>('todos');
   const [selectedPatientForDetail, setSelectedPatientForDetail] = useState<Patient | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'geral' | 'prontuario' | 'anamnese' | 'financeiro'>('geral');
+
+  // Listener para abrir diretamente o prontuário de um paciente (disparado pela assistente Clara)
+  React.useEffect(() => {
+    const handleOpenDetail = (e: any) => {
+      const { patientId, patientName } = e.detail || {};
+      const found = patients.find(p => (patientId && p.id === patientId) || (patientName && p.name.toLowerCase().includes(patientName.toLowerCase())));
+      if (found) {
+        setSelectedPatientForDetail(found);
+        setActiveDetailTab('prontuario');
+      } else if (patients.length > 0) {
+        setSelectedPatientForDetail(patients[patients.length - 1]);
+        setActiveDetailTab('prontuario');
+      }
+    };
+    window.addEventListener('open-patient-detail', handleOpenDetail);
+    return () => window.removeEventListener('open-patient-detail', handleOpenDetail);
+  }, [patients]);
 
   // Filter patients
   const filteredPatients = patients.filter((p) => {
@@ -190,7 +208,11 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       <h3 className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors">
                         {patient.name}
                       </h3>
-                      <p className="text-xs text-slate-500 font-mono mt-0.5">CPF: {patient.cpf || 'Não informado'}</p>
+                      <p className="text-xs text-emerald-400/90 font-medium flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 shrink-0 text-emerald-400" />
+                        <span>{patient.city || patient.state ? `${patient.city || ''}${patient.state ? (patient.city ? ' - ' : '') + patient.state : ''}` : 'Localidade não informada'}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500 font-mono mt-0.5">🪪 CPF: {patient.cpf || 'Não informado'}</p>
                     </div>
 
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.class}`}>

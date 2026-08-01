@@ -54,34 +54,32 @@ Pergunta do Psicólogo: ${prompt}`,
 
 Sua missão é ajudar psicólogos a trabalharem de forma mais organizada, eficiente e segura, reduzindo tarefas administrativas e permitindo que eles dediquem mais tempo ao cuidado dos pacientes.
 
+PRINCÍPIO FUNDAMENTAL - DADOS REAIS & ZERO ALUCINAÇÃO:
+- Você NUNCA deve inventar números, estatísticas, sessões ou nomes de pacientes.
+- Se o usuário perguntar sobre consultas, faturamento, pacientes, inadimplência ou prontuários, você DEVE utilizar EXCLUSIVAMENTE os dados reais fornecidos no objeto JSON do contexto.
+- Se uma informação não for encontrada no contexto ou se a contagem for 0, informe com total clareza e transparência que não há registros ou que o valor é 0.
+- Nunca estimar. Nunca gerar dados aleatórios.
+
 IDENTIDADE DA CLARA:
 - Nome: Clara (representa clareza, organização, confiança e simplicidade).
 - Personalidade: Inteligente, organizada, profissional mas acolhedora, gentil, empática, objetiva, eficiente e confiável. Nunca deve parecer fria ou robótica. Você se comunica como uma assistente profissional de alto nível, semelhante a uma secretária clínica inteligente.
 
 FORMA DE COMUNICAÇÃO:
-- Cumprimente o usuário de forma amigável;
-- Use linguagem clara e profissional;
-- Seja breve quando a pergunta for simples;
-- Seja detalhada quando o usuário precisar de orientação sobre agenda, pacientes ou prontuários;
-- Evite termos excessivamente técnicos;
-- Mantenha um tom humano e acolhedor.
+- Responda saudações do dia a dia (ex: "Bom dia", "Obrigado", "Boa noite", "Valeu") de forma simpática, breve e natural.
+- Use linguagem clara e profissional.
+- Seja breve quando a pergunta for simples e pontual.
+- Seja detalhada quando o usuário precisar de orientação sobre agenda, pacientes ou prontuários.
+- Mantenha um tom humano, sereno e muito respeitoso.
 
 FUNÇÕES DA CLARA DENTRO DO SESSÃO CERTA:
-- Agenda: consultar horários, organizar sessões, auxiliar no planejamento da semana, lembrar compromissos importantes.
-- Pacientes: ajudar na organização de informações, localizar registros, auxiliar na criação de resumos administrativos, facilitar o acesso às informações cadastradas.
-- Prontuários: auxiliar na organização dos registros, criar estruturas de anotações, melhorar a organização das informações inseridas pelo profissional.
-- Gestão clínica: gerar insights administrativos, ajudar o psicólogo a acompanhar sua rotina, auxiliar na produtividade e organização.
+- Agenda: consultar horários, organizar sessões do dia/semana, identificar horários vagos, próximas consultas.
+- Pacientes: número de ativos/inativos, localização de cadastros, histórico de atendimentos, aniversariantes.
+- Financeiro: faturamento do mês/ano, pendências de pagamento, relatórios de inadimplência.
+- Prontuários: contagem de evoluções, resumo de sessões registradas pelo psicólogo.
 
 LIMITES IMPORTANTES (SEGURANÇA ÉTICA):
 Você NÃO é uma psicóloga e NÃO realiza atendimento psicológico.
-Você nunca deve:
-- Diagnosticar pacientes;
-- Interpretar sintomas como diagnóstico;
-- Substituir a avaliação profissional do psicólogo;
-- Dar orientações clínicas ao paciente.
-
-Seu papel é estritamente auxiliar o psicólogo na organização, gestão e produtividade.
-
+Você nunca deve diagnosticar pacientes ou dar orientações clínicas.
 Quando alguém solicitar uma avaliação psicológica ou orientação clínica, responda categoricamente:
 "Eu posso ajudar com organização e informações administrativas dentro do Sessão Certa, mas avaliações psicológicas e decisões clínicas devem ser realizadas pelo psicólogo responsável."`,
             },
@@ -95,30 +93,18 @@ Quando alguém solicitar uma avaliação psicológica ou orientação clínica, 
         }
       }
 
-      // Fallback rule-based response when Gemini API Key is not configured or permission denied
+      // When Gemini API Key is not configured or fails, signal fallback so client-side ClaraEngine handles precise prompt query
       const lowerPrompt = (prompt || '').toLowerCase();
-      let fallbackText = '';
-
       if (lowerPrompt.includes('diagnost') || lowerPrompt.includes('sintoma') || lowerPrompt.includes('laudo') || lowerPrompt.includes('tratamento')) {
-        fallbackText = `Eu posso ajudar com organização e informações administrativas dentro do Sessão Certa, mas avaliações psicológicas e decisões clínicas devem ser realizadas pelo psicólogo responsável.`;
-      } else if (lowerPrompt.includes('hoje') || lowerPrompt.includes('agora')) {
-        fallbackText = `Claro! Vou ajudar você a organizar sua agenda de hoje. Você possui ${context?.todayCount || 4} atendimentos programados, sendo ${context?.confirmedCount || 3} confirmados e ${context?.pendingCount || 1} aguardando confirmação.
-
-💡 *Dica da Clara:* Envie um lembrete rápido pelo WhatsApp para as confirmações pendentes!`;
-      } else if (lowerPrompt.includes('semana') || lowerPrompt.includes('organizar')) {
-        fallbackText = `Vamos organizar sua semana para que sua rotina fique mais equilibrada. Posso ajudar revisando seus horários, sessões agendadas e tarefas pendentes.\n\nSua taxa de ocupação estimada está em ${context?.occupancyRate || '85%'}. Recomendo manter intervalos de 15 minutos entre sessões para registrar as evoluções nos prontuários.`;
-      } else if (lowerPrompt.includes('mensagem') || lowerPrompt.includes('lembrete')) {
-        fallbackText = `Com certeza! Aqui está uma sugestão de mensagem acolhedora para envio pelo WhatsApp:\n\n"Olá, [Nome do Paciente]! Passando para confirmar nossa sessão de amanhã às [Horário]. Posso contar com sua presença? Abraço, ${context?.practitionerName || 'Dra. Fernanda'}."`;
-      } else {
-        fallbackText = `Olá! Eu sou a Clara, sua assistente inteligente do Sessão Certa. Estou aqui para ajudar você a organizar sua rotina clínica, seus atendimentos e suas tarefas de forma simples e eficiente.\n\nAtualmente você conta com ${context?.activePatientsCount || 12} pacientes ativos e ${context?.todayCount || 4} sessões hoje. Como posso te auxiliar neste momento?`;
+        return res.json({
+          text: `Eu posso ajudar com organização e informações administrativas dentro do Sessão Certa, mas avaliações psicológicas e decisões clínicas devem ser realizadas pelo psicólogo responsável.`
+        });
       }
 
-      return res.json({ text: fallbackText });
+      return res.json({ isFallback: true });
     } catch (error: any) {
-      console.warn('Alerta suavizado no Copilot AI (Clara):', error?.message || error);
-      return res.json({
-        text: 'Olá! Sou a Clara. Tive uma pequena oscilação pontual na conexão externa, mas estou aqui para te ajudar a organizar sua agenda, visualizar sessões e manter seus atendimentos em dia!'
-      });
+      console.warn('Alerta no Copilot AI (Clara):', error?.message || error);
+      return res.json({ isFallback: true });
     }
   });
 

@@ -28,6 +28,8 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
   const [sessionPrice, setSessionPrice] = useState<number>(profile.sessionDefaultPrice);
   const [preferredSchedule, setPreferredSchedule] = useState('');
   const [initialAnamnesis, setInitialAnamnesis] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -54,6 +56,8 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
       setSessionPrice(patientToEdit.sessionPrice);
       setPreferredSchedule(patientToEdit.preferredSchedule || '');
       setInitialAnamnesis(patientToEdit.initialAnamnesis || '');
+      setCity(patientToEdit.city || '');
+      setState(patientToEdit.state || '');
     } else {
       setName('');
       setCpf('');
@@ -67,6 +71,8 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
       setSessionPrice(profile.sessionDefaultPrice);
       setPreferredSchedule('');
       setInitialAnamnesis('');
+      setCity('');
+      setState('');
     }
   }, [isOpen, patientToEdit, profile.sessionDefaultPrice]);
 
@@ -94,6 +100,8 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
         sessionPrice: Number(sessionPrice),
         preferredSchedule,
         initialAnamnesis,
+        city,
+        state,
       });
     } else {
       addPatient({
@@ -109,6 +117,8 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
         sessionPrice: Number(sessionPrice),
         preferredSchedule,
         initialAnamnesis,
+        city,
+        state,
       });
     }
 
@@ -181,6 +191,29 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
                 value={birthDate}
                 onChange={(e) => setBirthDate(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-semibold text-slate-300">Cidade</label>
+              <input
+                type="text"
+                placeholder="Ex: Rio de Janeiro"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="font-semibold text-slate-300">Estado (UF)</label>
+              <input
+                type="text"
+                placeholder="Ex: RJ"
+                maxLength={2}
+                value={state}
+                onChange={(e) => setState(e.target.value.toUpperCase())}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white uppercase placeholder-slate-600 focus:outline-none focus:border-emerald-500"
               />
             </div>
           </div>

@@ -18,6 +18,11 @@ export interface Patient {
   preferredSchedule?: string;
   initialAnamnesis?: string;
   createdAt: string;
+  city?: string;
+  state?: string;
+  neighborhood?: string;
+  country?: string; // Default: 'Brasil'
+  notes?: string;
 }
 
 export interface Session {
@@ -123,5 +128,69 @@ export interface SystemNotification {
   type: 'confirmation' | 'reschedule' | 'cancellation' | 'reminder';
   read: boolean;
   createdAt: string;
+}
+
+export type ClaraActionType = 
+  | 'add_patient'
+  | 'edit_patient'
+  | 'delete_patient'
+  | 'create_session'
+  | 'reschedule_session'
+  | 'cancel_session'
+  | 'create_clinical_note'
+  | 'send_email'
+  | 'send_whatsapp'
+  | 'confirm_session'
+  | 'mark_paid'
+  | 'open_prontuario'
+  | 'send_whatsapp_reminder';
+
+export interface ClaraPendingAction {
+  id: string;
+  type: ClaraActionType;
+  title: string;
+  description: string;
+  sessionId?: string;
+  patientId?: string;
+  patientName?: string;
+  date?: string;
+  time?: string;
+  amount?: number;
+  newDate?: string;
+  newTime?: string;
+  patientData?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+    cpf?: string;
+    sessionPrice?: number;
+    sessionType?: 'online' | 'presencial';
+  };
+  notes?: string;
+  messageText?: string;
+  emailSubject?: string;
+  emailBody?: string;
+  missingField?: string;
+}
+
+export interface ClaraProactiveInsight {
+  id: string;
+  category: 'agenda' | 'finance' | 'opportunity' | 'performance' | 'birthday';
+  title: string;
+  description: string;
+  badgeText: string;
+  badgeColor: string; // e.g. emerald, amber, sky, purple
+  actionLabel?: string;
+  actionPrompt?: string;
+  pendingAction?: ClaraPendingAction;
+}
+
+export interface ClaraChatMessage {
+  id: string;
+  sender: 'user' | 'ai';
+  text: string;
+  timestamp: string;
+  pendingAction?: ClaraPendingAction;
+  actionExecuted?: boolean;
 }
 
