@@ -4,7 +4,13 @@ import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
-import { sendVerificationEmail } from './src/services/emailService';
+import {
+  sendVerificationEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail,
+  sendSessionConfirmationEmail
+} from './src/services/emailService';
 import { emailAuditDb } from './src/services/emailAuditDb';
 import { processResendWebhook } from './src/services/webhookService';
 import { logger } from './src/utils/logger';
@@ -181,6 +187,134 @@ Pendentes: ${pendingCount || 0}`,
     } catch (error: any) {
       logger.error('AUTH', 'Exceção crítica na rota de e-mail de verificação', { error: error.message });
       res.status(500).json({ error: 'Erro ao processar envio de e-mail', details: error.message });
+    }
+  });
+
+  // API Route: Envio de E-mail de Boas-Vindas
+  app.post('/api/auth/send-welcome-email', async (req, res) => {
+    try {
+      const { email, name, loginUrl } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Campo e-mail é obrigatório.' });
+      }
+
+      const result = await sendWelcomeEmail(email, name || 'Profissional', loginUrl);
+
+      if (result.success) {
+        logger.audit('AUTH', `E-mail de boas-vindas despachado para ${email}`);
+      }
+
+      return res.json({
+        success: result.success,
+        messageId: result.messageId,
+        provider: result.provider,
+        error: result.error || null
+      });
+    } catch (error: any) {
+      logger.error('AUTH', 'Erro na rota de e-mail de boas-vindas', { error: error.message });
+      res.status(500).json({ error: 'Erro ao enviar e-mail de boas-vindas', details: error.message });
+    }
+  });
+
+  // API Route: Envio de Recuperação de Senha
+  app.post('/api/auth/send-password-reset', async (req, res) => {
+    try {
+      const { email, name, resetToken, resetUrl } = req.body;
+      if (!email || !resetToken) {
+        return res.status(400).json({ error: 'Campos obrigatórios ausentes (email, resetToken).' });
+      }
+
+      const result = await sendPasswordResetEmail(email, name || 'Profissional', resetToken, resetUrl);
+
+      if (result.success) {
+        logger.audit('AUTH', `E-mail de recuperação de senha enviado para ${email}`);
+      }
+
+      return res.json({
+        success: result.success,
+        messageId: result.messageId,
+        provider: result.provider,
+        error: result.error || null
+      });
+    } catch (error: any) {
+      logger.error('AUTH', 'Erro na rota de recuperação de senha', { error: error.message });
+      res.status(500).json({ error: 'Erro ao enviar e-mail de redefinição de senha', details: error.message });
+    }
+  });
+
+  // API Route: Envio de Confirmação de Alteração de Senha
+  app.post('/api/auth/send-password-changed', async (req, res) => {
+    try {
+      const { email, name, ipAddress } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: 'Campo e-mail é obrigatório.' });
+      }
+
+      const reqIp = ipAddress || req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
+      const result = await sendPasswordChangedEmail(email, name || 'Profissional', String(reqIp));
+
+      if (result.success) {
+        logger.audit('AUTH', `E-mail de aviso de alteração de senha enviado para ${email}`);
+      }
+
+      return res.json({
+        success: result.success,
+        messageId: result.messageId,
+        provider: result.provider,
+        error: result.error || null
+      });
+    } catch (error: any) {
+      logger.error('AUTH', 'Erro na rota de aviso de alteração de senha', { error: error.message });
+      res.status(500).json({ error: 'Erro ao enviar e-mail de aviso de alteração de senha', details: error.message });
+    }
+  });
+
+  // API Route: Envio de Confirmação de Consulta
+  app.post('/api/sessions/send-confirmation-email', async (req, res) => {
+    try {
+      const {
+        to,
+        patientName,
+        psychologistName,
+        date,
+        time,
+        type,
+        videoUrl,
+        clinicAddress,
+        price,
+        notes
+      } = req.body;
+
+      if (!to || !patientName || !date || !time) {
+        return res.status(400).json({ error: 'Campos obrigatórios ausentes (to, patientName, date, time).' });
+      }
+
+      const result = await sendSessionConfirmationEmail({
+        to,
+        patientName,
+        psychologistName: psychologistName || 'Dra. Fernanda',
+        date,
+        time,
+        type: type || 'online',
+        videoUrl,
+        clinicAddress,
+        price,
+        notes
+      });
+
+      if (result.success) {
+        logger.audit('SESSIONS', `E-mail de confirmação de consulta enviado para ${to}`, { date, time });
+      }
+
+      return res.json({
+        success: result.success,
+        messageId: result.messageId,
+        provider: result.provider,
+        error: result.error || null
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', 'Erro na rota de confirmação de consulta por e-mail', { error: error.message });
+      res.status(500).json({ error: 'Erro ao enviar e-mail de confirmação de consulta', details: error.message });
     }
   });
 

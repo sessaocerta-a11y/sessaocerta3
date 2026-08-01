@@ -48,6 +48,15 @@ function MainAppContent({
 
   const { activeLiveSession, closeLiveSession, addToast, isAdmin, setUserRole, canSwitchRole, logoutAccount } = useApp();
 
+  // Redirecionamento automático de painel baseado na Role do usuário autenticado (RBAC)
+  React.useEffect(() => {
+    if (isAdmin) {
+      setActiveTab('admin');
+    } else if (activeTab === 'admin') {
+      setActiveTab('dashboard');
+    }
+  }, [isAdmin]);
+
   const handleLogout = () => {
     logoutAccount();
     onGoToLanding();

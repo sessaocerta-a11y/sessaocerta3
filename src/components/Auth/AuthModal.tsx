@@ -100,29 +100,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const sendEmailBackend = async (
     recipientEmail: string,
     recipientName: string,
-    code: string,
-    type: 'register' | 'reset' = 'register'
+    code?: string,
+    type: 'register' | 'welcome' | 'reset' | 'password_changed' = 'register'
   ) => {
     try {
-      const res = await fetch('/api/auth/send-verification-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      console.log(`[CLIENT EMAIL DISPATCH] Solicitando envio backend (${type}) para:`, recipientEmail);
+      let endpoint = '/api/auth/send-verification-email';
+      let payload: any = {
+        email: recipientEmail,
+        name: recipientName,
+        verificationCode: code
+      };
+
+      if (type === 'welcome') {
+        endpoint = '/api/auth/send-welcome-email';
+        payload = {
           email: recipientEmail,
           name: recipientName,
-          verificationCode: code,
-          type
-        })
+          loginUrl: window.location.origin
+        };
+      } else if (type === 'reset') {
+        endpoint = '/api/auth/send-password-reset';
+        payload = {
+          email: recipientEmail,
+          name: recipientName,
+          resetToken: code,
+          resetUrl: `${window.location.origin}/reset-password?token=${code}`
+        };
+      } else if (type === 'password_changed') {
+        endpoint = '/api/auth/send-password-changed';
+        payload = {
+          email: recipientEmail,
+          name: recipientName
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.emailDetails) {
-          setLastEmailSent(data.emailDetails);
-        }
+      const data = await res.json();
+      console.log(`[CLIENT EMAIL DISPATCH] (${type}) Status HTTP:`, res.status, 'Resposta JSON:', data);
+
+      if (res.ok && data.emailDetails) {
+        setLastEmailSent(data.emailDetails);
       }
     } catch (err) {
-      console.error('Erro ao enviar e-mail via API:', err);
+      console.error(`[CLIENT EMAIL DISPATCH] Erro de rede ao enviar e-mail (${type}):`, err);
     }
   };
 
@@ -212,7 +238,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleConfirmEmailSubmit = (e: React.FormEvent) => {
+  const handleConfirmEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verificationCodeInput || verificationCodeInput.trim().length < 6) {
       setErrorMessage('Digite o código de 6 dígitos.');
@@ -222,16 +248,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
+    const res = verifyAccountCode(email, verificationCodeInput);
+    if (res.success) {
+      // Dispara o e-mail de Boas-vindas
+      await sendEmailBackend(email, name || 'Profissional', undefined, 'welcome');
       setIsLoading(false);
-      const res = verifyAccountCode(email, verificationCodeInput);
-      if (res.success) {
-        onSuccessAuth();
-        onClose();
-      } else {
-        setErrorMessage(res.message || 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.');
-      }
-    }, 400);
+      onSuccessAuth();
+      onClose();
+    } else {
+      setIsLoading(false);
+      setErrorMessage(res.message || 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.');
+    }
   };
 
   const handleResendCode = async () => {
@@ -276,20 +303,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 500);
   };
 
-  const handleQuickAdminLogin = () => {
-    setIsLoading(true);
-    setEmail('admin@sessaocerta.com.br');
-    setPassword('admin123');
-    setTimeout(() => {
-      setIsLoading(false);
-      const res = loginWithCredentials('admin@sessaocerta.com.br', 'admin123');
-      if (res.success) {
-        onSuccessAuth();
-        onClose();
-      } else {
-        setErrorMessage(res.message || 'Falha no login do administrador.');
-      }
-    }, 400);
+  const maskEmail = (str: string) => {
+    if (!str || !str.includes('@')) return str;
+    const [user, domain] = str.split('@');
+    if (user.length <= 2) {
+      return `${user[0]}*@${domain}`;
+    }
+    const maskedUser = user[0] + '*'.repeat(Math.min(user.length - 2, 6)) + user[user.length - 1];
+    return `${maskedUser}@${domain}`;
   };
 
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
@@ -304,9 +325,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const res = requestPasswordReset(email);
     if (res.success) {
       const code = res.code || '123456';
-      setActiveCodeDisplay(code);
       await sendEmailBackend(email, 'Profissional', code, 'reset');
       setIsLoading(false);
+      setVerificationCodeInput('');
+      setNewPassword('');
+      setNewPasswordConfirm('');
       setMode('reset_password');
     } else {
       setIsLoading(false);
@@ -314,7 +337,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleResetPasswordSubmit = (e: React.FormEvent) => {
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verificationCodeInput || verificationCodeInput.trim().length < 6) {
       setErrorMessage('Informe o código de redefinição de 6 dígitos.');
@@ -332,16 +355,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
+    const res = confirmPasswordReset(email, verificationCodeInput, newPassword);
+    if (res.success) {
+      setPassword(newPassword);
+      await sendEmailBackend(email, 'Profissional', undefined, 'password_changed');
       setIsLoading(false);
-      const res = confirmPasswordReset(email, verificationCodeInput, newPassword);
-      if (res.success) {
-        setPassword(newPassword);
-        setMode('login');
-      } else {
-        setErrorMessage(res.message || 'Código inválido.');
-      }
-    }, 500);
+      addToast('Senha redefinida com sucesso!', 'success');
+      setMode('login');
+    } else {
+      setIsLoading(false);
+      setErrorMessage(res.message || 'Código inválido.');
+    }
   };
 
   return (
@@ -558,32 +582,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {/* MODE: LOGIN */}
           {mode === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-3.5 text-xs">
-              {/* ADMIN MVP QUICK ACCESS CARD */}
-              <div className="p-3.5 rounded-2xl bg-purple-950/40 border border-purple-800/60 space-y-2 mb-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-purple-300 font-extrabold text-xs">
-                    <ShieldCheck className="w-4 h-4 text-purple-400" />
-                    <span>Acesso Rápido - Admin SaaS</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    Administrador
-                  </span>
-                </div>
-                <div className="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800 text-[11px] font-mono text-purple-200">
-                  <span>admin@sessaocerta.com.br</span>
-                  <span>admin123</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleQuickAdminLogin}
-                  disabled={isLoading}
-                  className="w-full py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-purple-950/50"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Entrar com Conta Admin</span>
-                </button>
-              </div>
-
               <div className="space-y-1">
                 <label className="font-semibold text-slate-300">E-mail Profissional Cadastrado</label>
                 <div className="relative">
@@ -797,26 +795,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           {mode === 'reset_password' && (
             <form onSubmit={handleResetPasswordSubmit} className="space-y-3.5 text-xs">
               <div className="p-3.5 rounded-2xl bg-sky-950/50 border border-sky-800/80 text-center space-y-1">
-                <div className="text-[10px] uppercase font-bold text-sky-400 tracking-wider">
-                  E-mail de Redefinição Enviado para {email}
+                <div className="text-[10px] uppercase font-extrabold text-sky-400 tracking-wider">
+                  Código Enviado
                 </div>
-                {activeCodeDisplay && (
-                  <div className="text-2xl font-mono font-extrabold text-white tracking-widest pt-1">
-                    {activeCodeDisplay}
-                  </div>
-                )}
-                <div className="text-[11px] text-sky-300/80">
-                  O código de redefinição de senha foi enviado com sucesso.
+                <div className="text-sm font-mono font-bold text-white pt-0.5">
+                  {maskEmail(email)}
+                </div>
+                <div className="text-[11px] text-sky-300/80 pt-1 leading-relaxed">
+                  Enviamos um código de verificação para o seu e-mail. Digite o código de 6 dígitos abaixo e defina sua nova senha.
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Código de Redefinição (6 dígitos)</label>
+                <label className="font-semibold text-slate-300">Código de Redefinição (6 dígitos) *</label>
                 <input
                   type="text"
                   required
                   maxLength={6}
-                  placeholder="Ex: 123456"
+                  placeholder="Digite o código enviado por e-mail"
                   value={verificationCodeInput}
                   onChange={(e) => setVerificationCodeInput(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-center text-base font-mono font-bold text-sky-400 focus:outline-none focus:border-sky-500"

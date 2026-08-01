@@ -253,6 +253,24 @@ export const SessionFormModal: React.FC<SessionFormModalProps> = ({
           paymentStatus,
           whatsappReminderSent: false,
         });
+
+        // Envia e-mail de confirmação de consulta para o paciente se houver e-mail cadastrado
+        if (selectedPatient.email) {
+          fetch('/api/sessions/send-confirmation-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: selectedPatient.email,
+              patientName: selectedPatient.name,
+              psychologistName: profile?.name || 'Dra. Fernanda',
+              date: sessionDateStr,
+              time: formattedStart,
+              type,
+              videoUrl: type === 'online' ? (videoUrl || 'https://meet.google.com/ses-certa-online') : undefined,
+              price: Number(price)
+            })
+          }).catch((err) => console.error('[CLIENT SESSION EMAIL ERROR]', err));
+        }
       }
       addToast(
         numWeeks > 1

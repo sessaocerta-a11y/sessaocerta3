@@ -6,7 +6,7 @@ export type LogLevel = 'info' | 'warn' | 'error' | 'audit';
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
-  category: 'EMAIL_DISPATCH' | 'AUTH' | 'RESEND_INTEGRATION' | 'SYSTEM';
+  category: 'EMAIL_DISPATCH' | 'AUTH' | 'RESEND_INTEGRATION' | 'SYSTEM' | 'SESSIONS';
   message: string;
   meta?: Record<string, any>;
 }
