@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Patient,
   Session,
@@ -55,8 +55,8 @@ interface AppContextType {
   // Patients
   patients: Patient[];
   addPatient: (patientData: Omit<Patient, 'id' | 'createdAt'>) => Patient;
-  updatePatient: (id: string, patientData: Partial<Patient>) => void;
-  deletePatient: (id: string) => void;
+  updatePatient: (id: string, patientData: Partial<Patient>, updatedBy?: string) => void;
+  deletePatient: (id: string, userResponsible?: string) => void;
   getPatientById: (id: string) => Patient | undefined;
 
   // Sessions
@@ -258,9 +258,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sync active changes (profile, patients, sessions) into the accounts state
   useEffect(() => {
     if (!currentAccountEmail) return;
-    setAccounts((prev) =>
-      prev.map((acc) => {
+    setAccounts((prev) => {
+      let isChanged = false;
+      const updated = prev.map((acc) => {
         if (acc.email.toLowerCase() === currentAccountEmail.toLowerCase()) {
+          if (acc.profile === profile && acc.patients === patients && acc.sessions === sessions) {
+            return acc;
+          }
+          isChanged = true;
           return {
             ...acc,
             profile,
@@ -269,8 +274,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
         return acc;
-      })
-    );
+      });
+      return isChanged ? updated : prev;
+    });
   }, [profile, patients, sessions, currentAccountEmail]);
 
   // Check if current user account is a SaaS Master Admin
@@ -379,25 +385,134 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newPatient;
   };
 
-  const updatePatient = (id: string, patientData: Partial<Patient>) => {
+  const updatePatient = (id: string, patientData: Partial<Patient>, updatedBy: string = 'Psicólogo(a)') => {
+    let changeMessage = 'Dados do paciente atualizados com sucesso!';
     setPatients((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...patientData } : p))
+      prev.map((p) => {
+        if (p.id !== id) return p;
+
+        const newHistory = [...(p.changeHistory || [])];
+        const timestamp = new Date().toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const fieldLabels: Record<string, string> = {
+          name: 'Nome Completo',
+          phone: 'Telefone / WhatsApp',
+          email: 'E-mail',
+          cpf: 'CPF',
+          city: 'Cidade',
+          state: 'Estado',
+          sessionPrice: 'Valor da Sessão',
+          attendanceType: 'Modalidade',
+          emergencyContactName: 'Nome Contato de Emergência',
+          emergencyContactPhone: 'Telefone Contato de Emergência',
+          status: 'Status Terapêutico',
+          initialAnamnesis: 'Anamnese Inicial',
+          notes: 'Observações'
+        };
+
+        const statusMap: Record<string, string> = {
+          ativo: 'Ativo em Terapia',
+          arquivado: 'Arquivado',
+          alta: 'Alta Terapêutica',
+          pausa: 'Em Pausa'
+        };
+
+        Object.keys(patientData).forEach((key) => {
+          const k = key as keyof Patient;
+          const oldValRaw = p[k];
+          const newValRaw = patientData[k];
+
+          if (oldValRaw !== undefined && newValRaw !== undefined && oldValRaw !== newValRaw) {
+            let oldValStr = String(oldValRaw ?? '');
+            let newValStr = String(newValRaw ?? '');
+
+            if (k === 'status') {
+              oldValStr = statusMap[oldValStr] || oldValStr;
+              newValStr = statusMap[newValStr] || newValStr;
+              if (newValRaw === 'arquivado') changeMessage = `Paciente ${p.name} arquivado com sucesso!`;
+              if (newValRaw === 'alta') changeMessage = `Alta terapêutica registrada para ${p.name}!`;
+              if (newValRaw === 'ativo') changeMessage = `Paciente ${p.name} reativado com sucesso!`;
+            } else if (k === 'sessionPrice') {
+              oldValStr = `R$ ${oldValRaw}`;
+              newValStr = `R$ ${newValRaw}`;
+            }
+
+            const fieldLabel = fieldLabels[k] || k;
+            newHistory.unshift({
+              id: `hist-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              timestamp,
+              user: updatedBy,
+              field: fieldLabel,
+              oldValue: oldValStr || 'Vazio',
+              newValue: newValStr || 'Vazio'
+            });
+          }
+        });
+
+        return {
+          ...p,
+          ...patientData,
+          changeHistory: newHistory
+        };
+      })
     );
-    // Also update patient name in existing sessions if name changed
+
     if (patientData.name) {
       setSessions((prev) =>
         prev.map((s) => (s.patientId === id ? { ...s, patientName: patientData.name! } : s))
       );
     }
-    addToast('Dados do paciente atualizados com sucesso!');
+
+    addToast(changeMessage);
   };
 
-  const deletePatient = (id: string) => {
+  const deletePatient = (id: string, userResponsible?: string) => {
     const patient = patients.find((p) => p.id === id);
+    if (!patient) return;
+
+    const user = userResponsible || profile?.name || 'Clara (Assistente Virtual)';
+
+    // Calculate audit metrics before deletion
+    const patientSessions = sessions.filter(
+      (s) => s.patientId === id || s.patientName.toLowerCase() === patient.name.toLowerCase()
+    );
+    const sessionsCount = patientSessions.length;
+    const prontuariosCount = patientSessions.filter(
+      (s) => (s.clinicalNotes && s.clinicalNotes.trim().length > 0) || (patient.initialAnamnesis && patient.initialAnamnesis.trim().length > 0)
+    ).length || (patient.initialAnamnesis ? 1 : 0);
+    const financialCount = patientSessions.filter((s) => s.price && s.price > 0).length;
+
+    // Atomic state update: remove patient and all associated sessions/records
     setPatients((prev) => prev.filter((p) => p.id !== id));
-    // Remove associated sessions
-    setSessions((prev) => prev.filter((s) => s.patientId !== id));
-    addToast(`Paciente ${patient?.name || ''} removido com histórico.`, 'info');
+    setSessions((prev) =>
+      prev.filter((s) => s.patientId !== id && s.patientName.toLowerCase() !== patient.name.toLowerCase())
+    );
+
+    // Administrative audit log
+    const now = new Date();
+    try {
+      const existingLogs = JSON.parse(localStorage.getItem('clara_admin_audit_logs') || '[]');
+      existingLogs.unshift({
+        id: `audit-${Date.now()}`,
+        date: now.toLocaleDateString('pt-BR'),
+        time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        user,
+        patientName: patient.name,
+        sessionsRemoved: sessionsCount,
+        prontuariosRemoved: prontuariosCount,
+        financialRecordsRemoved: financialCount,
+        reason: 'Exclusão permanente'
+      });
+      localStorage.setItem('clara_admin_audit_logs', JSON.stringify(existingLogs));
+    } catch (e) {
+      console.error('Failed to write administrative audit log:', e);
+    }
   };
 
   const getPatientById = (id: string) => {
@@ -859,55 +974,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast('Lista de pacientes e agendamentos limpa com sucesso. Pronto para cadastros reais.', 'info');
   };
 
+  const contextValue = useMemo(
+    () => ({
+      accounts,
+      currentAccountEmail,
+      registerAccount,
+      verifyAccountCode,
+      resendVerificationCode,
+      loginWithCredentials,
+      logoutAccount,
+      requestPasswordReset,
+      confirmPasswordReset,
+      userRole,
+      setUserRole,
+      isAdmin,
+      isMasterAdmin,
+      canSwitchRole,
+      profile,
+      updateProfile,
+      patients,
+      addPatient,
+      updatePatient,
+      deletePatient,
+      getPatientById,
+      sessions,
+      addSession,
+      updateSession,
+      deleteSession,
+      updateSessionStatus,
+      updatePaymentStatus,
+      saveClinicalNotes,
+      hideConfidentialData,
+      toggleHideConfidentialData,
+      activeLiveSession,
+      startLiveSession,
+      closeLiveSession,
+      whatsAppModalSession,
+      openWhatsAppModal,
+      closeWhatsAppModal,
+      generateWhatsAppLink,
+      toasts,
+      addToast,
+      removeToast,
+      updateAccountByAdmin,
+      resetToDemoData,
+      loadDemoData,
+      clearPatientsAndSessions,
+    }),
+    [
+      accounts,
+      currentAccountEmail,
+      userRole,
+      isAdmin,
+      isMasterAdmin,
+      canSwitchRole,
+      profile,
+      patients,
+      sessions,
+      hideConfidentialData,
+      activeLiveSession,
+      whatsAppModalSession,
+      toasts,
+    ]
+  );
+
   return (
-    <AppContext.Provider
-      value={{
-        accounts,
-        currentAccountEmail,
-        registerAccount,
-        verifyAccountCode,
-        resendVerificationCode,
-        loginWithCredentials,
-        logoutAccount,
-        requestPasswordReset,
-        confirmPasswordReset,
-        userRole,
-        setUserRole,
-        isAdmin,
-        isMasterAdmin,
-        canSwitchRole,
-        profile,
-        updateProfile,
-        patients,
-        addPatient,
-        updatePatient,
-        deletePatient,
-        getPatientById,
-        sessions,
-        addSession,
-        updateSession,
-        deleteSession,
-        updateSessionStatus,
-        updatePaymentStatus,
-        saveClinicalNotes,
-        hideConfidentialData,
-        toggleHideConfidentialData,
-        activeLiveSession,
-        startLiveSession,
-        closeLiveSession,
-        whatsAppModalSession,
-        openWhatsAppModal,
-        closeWhatsAppModal,
-        generateWhatsAppLink,
-        toasts,
-        addToast,
-        removeToast,
-        updateAccountByAdmin,
-        resetToDemoData,
-        loadDemoData,
-        clearPatientsAndSessions,
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       {children}
     </AppContext.Provider>
   );

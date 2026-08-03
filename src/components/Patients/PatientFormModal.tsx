@@ -282,9 +282,10 @@ export const PatientFormModal: React.FC<PatientFormModalProps> = ({
                 onChange={(e) => setStatus(e.target.value as PatientStatus)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="ativo">Ativo em Terapia</option>
-                <option value="pausa">Em Pausa</option>
-                <option value="alta">Com Alta Terapêutica</option>
+                <option value="ativo">🟢 Ativo em Terapia</option>
+                <option value="arquivado">📦 Arquivado</option>
+                <option value="alta">🎓 Com Alta Terapêutica</option>
+                <option value="pausa">⏸ Em Pausa</option>
               </select>
             </div>
 

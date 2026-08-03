@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Patient, PatientStatus, AttendanceType } from '../../types';
+import { StrictDeletePatientModal } from './StrictDeletePatientModal';
 import {
   Users,
   Search,
@@ -23,7 +24,13 @@ import {
   AlertCircle,
   X,
   ExternalLink,
-  MapPin
+  MapPin,
+  MoreVertical,
+  Archive,
+  GraduationCap,
+  History,
+  RotateCcw,
+  CalendarPlus
 } from 'lucide-react';
 
 interface PatientsViewProps {
@@ -38,17 +45,21 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   const {
     patients,
     sessions,
+    updatePatient,
     deletePatient,
     hideConfidentialData,
     toggleHideConfidentialData,
     profile,
-    loadDemoData
+    loadDemoData,
+    addToast
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<PatientStatus | 'todos'>('todos');
   const [selectedPatientForDetail, setSelectedPatientForDetail] = useState<Patient | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'geral' | 'prontuario' | 'anamnese' | 'financeiro'>('geral');
+  const [activeDetailTab, setActiveDetailTab] = useState<'geral' | 'prontuario' | 'anamnese' | 'financeiro' | 'historico'>('geral');
+  const [openMenuPatientId, setOpenMenuPatientId] = useState<string | null>(null);
+  const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
 
   // Listener para abrir diretamente o prontuário de um paciente (disparado pela assistente Clara)
   React.useEffect(() => {
@@ -67,13 +78,18 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
     return () => window.removeEventListener('open-patient-detail', handleOpenDetail);
   }, [patients]);
 
-  // Filter patients
+  // Enhanced Filter patients
   const filteredPatients = patients.filter((p) => {
+    const term = searchTerm.toLowerCase().trim();
     const matchesSearch =
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.cpf.includes(searchTerm) ||
-      p.phone.includes(searchTerm) ||
-      p.email.toLowerCase().includes(searchTerm.toLowerCase());
+      !term ||
+      p.name.toLowerCase().includes(term) ||
+      (p.cpf || '').includes(term) ||
+      (p.phone || '').includes(term) ||
+      (p.email || '').toLowerCase().includes(term) ||
+      (p.city || '').toLowerCase().includes(term) ||
+      (p.emergencyContactName || '').toLowerCase().includes(term) ||
+      (p.emergencyContactPhone || '').includes(term);
 
     const matchesStatus = selectedStatus === 'todos' || p.status === selectedStatus;
 
@@ -97,13 +113,38 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   };
 
   const statusBadges: Record<PatientStatus, { label: string; class: string }> = {
-    ativo: { label: 'Ativo em Terapia', class: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-    pausa: { label: 'Em Pausa', class: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-    alta: { label: 'Alta Terapêutica', class: 'bg-sky-500/10 text-sky-400 border-sky-500/20' },
+    ativo: { label: '🟢 Ativo', class: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+    arquivado: { label: '📦 Arquivado', class: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
+    alta: { label: '🎓 Alta Terapêutica', class: 'bg-sky-500/10 text-sky-400 border-sky-500/30' },
+    pausa: { label: '⏸ Em Pausa', class: 'bg-slate-500/10 text-slate-400 border-slate-500/30' },
+  };
+
+  // Quick action helpers
+  const handleArchive = (p: Patient) => {
+    updatePatient(p.id, { status: 'arquivado' }, 'Psicólogo(a)');
+    setOpenMenuPatientId(null);
+  };
+
+  const handleDischarge = (p: Patient) => {
+    updatePatient(p.id, { status: 'alta' }, 'Psicólogo(a)');
+    setOpenMenuPatientId(null);
+  };
+
+  const handleReactivate = (p: Patient) => {
+    updatePatient(p.id, { status: 'ativo' }, 'Psicólogo(a)');
+    setOpenMenuPatientId(null);
+  };
+
+  const handleScheduleAppointment = (p: Patient) => {
+    setOpenMenuPatientId(null);
+    // Dispatch custom event to open appointment modal for this patient
+    window.dispatchEvent(new CustomEvent('clara-ask-question', {
+      detail: { prompt: `Agendar consulta para ${p.name}` }
+    }));
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 relative">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
         <div>
@@ -112,13 +153,13 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             <span>Gestão de Pacientes & Prontuários</span>
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Cadastre, edite informações e consulte o histórico de evolução clínica com segurança e sigilo.
+            Gestão completa do ciclo de vida: cadastrar, consultar, editar, arquivar, dar alta e gerenciar prontuários sigilosos.
           </p>
         </div>
 
         <button
           onClick={onOpenNewPatientModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20 transition-all shrink-0"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20 transition-all shrink-0 cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
           <span>Cadastrar Novo Paciente</span>
@@ -128,11 +169,11 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Search input */}
-        <div className="relative w-full md:w-80">
+        <div className="relative w-full md:w-96">
           <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder="Buscar por nome, CPF ou telefone..."
+            placeholder="Buscar por nome, CPF, fone, e-mail, cidade..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
@@ -141,17 +182,25 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
         {/* Status Tabs */}
         <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 w-full md:w-auto overflow-x-auto">
-          {(['todos', 'ativo', 'pausa', 'alta'] as const).map((status) => (
+          {(['todos', 'ativo', 'arquivado', 'alta', 'pausa'] as const).map((status) => (
             <button
               key={status}
               onClick={() => setSelectedStatus(status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all whitespace-nowrap ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                 selectedStatus === status
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
               }`}
             >
-              {status === 'todos' ? 'Todos os Pacientes' : status === 'ativo' ? 'Ativos' : status === 'pausa' ? 'Em Pausa' : 'Com Alta'}
+              {status === 'todos'
+                ? `Todos (${patients.length})`
+                : status === 'ativo'
+                ? `🟢 Ativos (${patients.filter(p => p.status === 'ativo').length})`
+                : status === 'arquivado'
+                ? `📦 Arquivados (${patients.filter(p => p.status === 'arquivado').length})`
+                : status === 'alta'
+                ? `🎓 Alta (${patients.filter(p => p.status === 'alta').length})`
+                : `⏸ Pausa (${patients.filter(p => p.status === 'pausa').length})`}
             </button>
           ))}
         </div>
@@ -165,26 +214,26 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           </div>
           <div className="space-y-1">
             <h3 className="text-base font-bold text-white">
-              {patients.length === 0 ? 'Seu consultório ainda não possui pacientes' : 'Nenhum paciente encontrado'}
+              {patients.length === 0 ? 'Seu consultório ainda não possui pacientes' : 'Nenhum paciente encontrado com esses filtros'}
             </h3>
             <p className="text-slate-400 text-xs max-w-md mx-auto leading-relaxed">
               {patients.length === 0
-                ? 'Novos perfis iniciam 100% limpos. Cadastre o seu primeiro paciente de forma rápida para iniciar os atendimentos.'
-                : 'Não encontramos registros com os filtros digitados. Tente buscar por outro termo ou limpe os filtros.'}
+                ? 'Cadastre o seu primeiro paciente de forma rápida com a assistente Clara ou pela interface.'
+                : 'Não encontramos registros com o termo buscado. Tente pesquisar por nome, CPF ou cidade.'}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
               onClick={onOpenNewPatientModal}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all"
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-950/50 flex items-center gap-2 transition-all cursor-pointer"
             >
               <UserPlus className="w-4 h-4" />
-              <span>Cadastrar Primeiro Paciente</span>
+              <span>Cadastrar Novo Paciente</span>
             </button>
             {patients.length === 0 && (
               <button
                 onClick={loadDemoData}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors"
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors cursor-pointer"
               >
                 Carregar Pacientes de Teste (Demo)
               </button>
@@ -195,12 +244,13 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPatients.map((patient) => {
             const stats = getPatientSessionStats(patient.id);
-            const badge = statusBadges[patient.status];
+            const badge = statusBadges[patient.status] || statusBadges.ativo;
+            const isMenuOpen = openMenuPatientId === patient.id;
 
             return (
               <div
                 key={patient.id}
-                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between space-y-4 shadow-md group"
+                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all flex flex-col justify-between space-y-4 shadow-md group relative"
               >
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
@@ -215,9 +265,126 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       <p className="text-[11px] text-slate-500 font-mono mt-0.5">🪪 CPF: {patient.cpf || 'Não informado'}</p>
                     </div>
 
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.class}`}>
-                      {badge.label}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.class}`}>
+                        {badge.label}
+                      </span>
+
+                      {/* Dropdown Menu Trigger Button */}
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenMenuPatientId(isMenuOpen ? null : patient.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Menu de Ações"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+
+                        {/* Action Dropdown Menu */}
+                        {isMenuOpen && (
+                          <div
+                            className="absolute right-0 top-8 z-30 w-52 bg-slate-950 border border-slate-800 rounded-2xl shadow-2xl p-1.5 space-y-1 text-xs text-slate-200 animate-in fade-in zoom-in-95"
+                            onMouseLeave={() => setOpenMenuPatientId(null)}
+                          >
+                            <button
+                              onClick={() => {
+                                setOpenMenuPatientId(null);
+                                onEditPatientModal(patient);
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Editar Dados</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleScheduleAppointment(patient)}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <CalendarPlus className="w-3.5 h-3.5 text-sky-400" />
+                              <span>Agendar Consulta</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setOpenMenuPatientId(null);
+                                setSelectedPatientForDetail(patient);
+                                setActiveDetailTab('prontuario');
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Abrir Prontuário</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setOpenMenuPatientId(null);
+                                setSelectedPatientForDetail(patient);
+                                setActiveDetailTab('financeiro');
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Financeiro</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setOpenMenuPatientId(null);
+                                setSelectedPatientForDetail(patient);
+                                setActiveDetailTab('historico');
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <History className="w-3.5 h-3.5 text-purple-400" />
+                              <span>Histórico de Alterações</span>
+                            </button>
+
+                            <div className="my-1 border-t border-slate-800/80" />
+
+                            {patient.status !== 'arquivado' ? (
+                              <button
+                                onClick={() => handleArchive(patient)}
+                                className="w-full text-left px-3 py-2 rounded-xl hover:bg-amber-950/40 text-amber-300 flex items-center gap-2 font-medium cursor-pointer"
+                              >
+                                <Archive className="w-3.5 h-3.5" />
+                                <span>Arquivar Paciente</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleReactivate(patient)}
+                                className="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-950/40 text-emerald-300 flex items-center gap-2 font-medium cursor-pointer"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reativar Paciente</span>
+                              </button>
+                            )}
+
+                            {patient.status !== 'alta' && (
+                              <button
+                                onClick={() => handleDischarge(patient)}
+                                className="w-full text-left px-3 py-2 rounded-xl hover:bg-sky-950/40 text-sky-300 flex items-center gap-2 font-medium cursor-pointer"
+                              >
+                                <GraduationCap className="w-3.5 h-3.5" />
+                                <span>Dar Alta Terapêutica</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                setOpenMenuPatientId(null);
+                                setPatientToDelete(patient);
+                              }}
+                              className="w-full text-left px-3 py-2 rounded-xl hover:bg-rose-950/50 text-rose-400 flex items-center gap-2 font-medium cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Excluir Permanentemente</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-1.5 text-xs text-slate-300">
@@ -253,15 +420,18 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => onEditPatientModal(patient)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Editar Paciente"
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
 
                     <button
-                      onClick={() => setSelectedPatientForDetail(patient)}
-                      className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold border border-emerald-500/30 transition-all"
+                      onClick={() => {
+                        setSelectedPatientForDetail(patient);
+                        setActiveDetailTab('prontuario');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold border border-emerald-500/30 transition-all cursor-pointer"
                     >
                       Ver Prontuário
                     </button>
@@ -285,22 +455,22 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                     {selectedPatientForDetail.name}
                   </h2>
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                      statusBadges[selectedPatientForDetail.status].class
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      (statusBadges[selectedPatientForDetail.status] || statusBadges.ativo).class
                     }`}
                   >
-                    {statusBadges[selectedPatientForDetail.status].label}
+                    {(statusBadges[selectedPatientForDetail.status] || statusBadges.ativo).label}
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 font-mono mt-1">
-                  CPF: {selectedPatientForDetail.cpf} | Data de Nascimento: {selectedPatientForDetail.birthDate || 'Não informada'}
+                  CPF: {selectedPatientForDetail.cpf || 'Não informado'} | Data Nasc.: {selectedPatientForDetail.birthDate || 'Não informada'} | Cidade: {selectedPatientForDetail.city || 'Não informada'}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={toggleHideConfidentialData}
-                  className={`p-2 rounded-lg text-xs font-semibold border ${
+                  className={`p-2 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
                     hideConfidentialData ? 'bg-amber-950 text-amber-300 border-amber-700' : 'bg-slate-800 text-slate-300 border-slate-700'
                   }`}
                   title="Ocultar notas clínicas da tela"
@@ -309,7 +479,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 </button>
                 <button
                   onClick={() => setSelectedPatientForDetail(null)}
-                  className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -317,10 +487,10 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-800 px-6 bg-slate-900/90">
+            <div className="flex items-center gap-1 border-b border-slate-800 px-6 bg-slate-900/90 overflow-x-auto">
               <button
                 onClick={() => setActiveDetailTab('geral')}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+                className={`py-3 px-3.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeDetailTab === 'geral'
                     ? 'border-emerald-400 text-emerald-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -331,7 +501,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
               <button
                 onClick={() => setActiveDetailTab('prontuario')}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+                className={`py-3 px-3.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeDetailTab === 'prontuario'
                     ? 'border-emerald-400 text-emerald-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -342,7 +512,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
               <button
                 onClick={() => setActiveDetailTab('anamnese')}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+                className={`py-3 px-3.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeDetailTab === 'anamnese'
                     ? 'border-emerald-400 text-emerald-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -353,13 +523,24 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
               <button
                 onClick={() => setActiveDetailTab('financeiro')}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors ${
+                className={`py-3 px-3.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
                   activeDetailTab === 'financeiro'
                     ? 'border-emerald-400 text-emerald-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
                 Histórico Financeiro
+              </button>
+
+              <button
+                onClick={() => setActiveDetailTab('historico')}
+                className={`py-3 px-3.5 text-xs font-bold border-b-2 transition-colors whitespace-nowrap cursor-pointer ${
+                  activeDetailTab === 'historico'
+                    ? 'border-purple-400 text-purple-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📜 Histórico de Alterações ({selectedPatientForDetail.changeHistory?.length || 0})
               </button>
             </div>
 
@@ -374,6 +555,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                     <div className="space-y-2">
                       <div><strong className="text-slate-400">Telefone / WhatsApp:</strong> {selectedPatientForDetail.phone}</div>
                       <div><strong className="text-slate-400">E-mail:</strong> {selectedPatientForDetail.email || 'Não informado'}</div>
+                      <div><strong className="text-slate-400">CPF:</strong> {selectedPatientForDetail.cpf || 'Não informado'}</div>
                       <div><strong className="text-slate-400">Modalidade:</strong> {selectedPatientForDetail.attendanceType}</div>
                       <div><strong className="text-slate-400">Horário Preferencial:</strong> {selectedPatientForDetail.preferredSchedule || 'A combinar'}</div>
                     </div>
@@ -387,7 +569,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       <div><strong className="text-slate-400">Nome:</strong> {selectedPatientForDetail.emergencyContactName}</div>
                       <div><strong className="text-slate-400">Telefone:</strong> {selectedPatientForDetail.emergencyContactPhone}</div>
                       <p className="text-[11px] text-slate-500 pt-2 border-t border-slate-800">
-                        Obrigatório conforme diretrizes éticas para gestão de riscos em clínica psicológica.
+                        Obrigatório conforme diretrizes éticas do CFP para gestão de riscos em clínica psicológica.
                       </p>
                     </div>
                   </div>
@@ -466,32 +648,145 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   </div>
                 </div>
               )}
+
+              {activeDetailTab === 'historico' && (
+                <div className="space-y-4 text-xs">
+                  <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                    <History className="w-4 h-4 text-purple-400" />
+                    <span>Registro Interno de Modificações & Auditoria</span>
+                  </h3>
+
+                  {(!selectedPatientForDetail.changeHistory || selectedPatientForDetail.changeHistory.length === 0) ? (
+                    <div className="p-8 text-center bg-slate-950/50 rounded-xl border border-slate-800/80 text-slate-500">
+                      Nenhuma alteração registrada até o momento. O cadastro permanece original.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {selectedPatientForDetail.changeHistory.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-purple-300">{item.field}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                                {item.timestamp}
+                              </span>
+                            </div>
+                            <div className="text-slate-300 flex items-center gap-2">
+                              <span className="line-through text-slate-500">{item.oldValue}</span>
+                              <span className="text-slate-400">➔</span>
+                              <strong className="text-emerald-400">{item.newValue}</strong>
+                            </div>
+                          </div>
+
+                          <span className="text-[10px] text-slate-400 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-lg shrink-0">
+                            Por: {item.user}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
-              <button
-                onClick={() => {
-                  if (confirm(`Excluir ${selectedPatientForDetail.name} e seu histórico?`)) {
-                    deletePatient(selectedPatientForDetail.id);
+            {/* Modal Footer Actions */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const p = selectedPatientForDetail;
                     setSelectedPatientForDetail(null);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-400 hover:bg-rose-950/50 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Excluir Paciente</span>
-              </button>
+                    onEditPatientModal(p);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Editar Cadastro</span>
+                </button>
 
-              <button
-                onClick={() => setSelectedPatientForDetail(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
-              >
-                Fechar Prontuário
-              </button>
+                {selectedPatientForDetail.status !== 'arquivado' ? (
+                  <button
+                    onClick={() => {
+                      const p = selectedPatientForDetail;
+                      handleArchive(p);
+                      setSelectedPatientForDetail({ ...p, status: 'arquivado' });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition-colors cursor-pointer"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    <span>Arquivar</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const p = selectedPatientForDetail;
+                      handleReactivate(p);
+                      setSelectedPatientForDetail({ ...p, status: 'ativo' });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/50 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reativar</span>
+                  </button>
+                )}
+
+                {selectedPatientForDetail.status !== 'alta' && (
+                  <button
+                    onClick={() => {
+                      const p = selectedPatientForDetail;
+                      handleDischarge(p);
+                      setSelectedPatientForDetail({ ...p, status: 'alta' });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-950/40 hover:bg-sky-900/60 text-sky-300 border border-sky-800/50 transition-colors cursor-pointer"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>Dar Alta</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const p = selectedPatientForDetail;
+                    setSelectedPatientForDetail(null);
+                    setPatientToDelete(p);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-950/50 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Permanentemente</span>
+                </button>
+
+                <button
+                  onClick={() => setSelectedPatientForDetail(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                >
+                  Fechar Prontuário
+                </button>
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Strict Delete Confirmation Modal */}
+      {patientToDelete && (
+        <StrictDeletePatientModal
+          patient={patientToDelete}
+          onClose={() => setPatientToDelete(null)}
+          onConfirmDelete={(pId) => {
+            deletePatient(pId);
+            setPatientToDelete(null);
+          }}
+          onArchivePatient={(pId) => {
+            updatePatient(pId, { status: 'arquivado' }, 'Psicólogo(a)');
+            setPatientToDelete(null);
+          }}
+        />
       )}
     </div>
   );

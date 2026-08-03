@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   ClaraChatMessage,
@@ -82,6 +82,8 @@ export const CopilotWidget: React.FC = () => {
     }
   }, [messages, isOpen, isMinimized, activeTab]);
 
+  const handleSendMessageRef = useRef<(prompt?: string) => void>(() => {});
+
   // Listen for global custom event 'clara-ask-question' to open Clara and send prompt
   useEffect(() => {
     const handleAskClaraEvent = (e: CustomEvent<{ prompt: string }>) => {
@@ -89,7 +91,7 @@ export const CopilotWidget: React.FC = () => {
         setIsOpen(true);
         setIsMinimized(false);
         setActiveTab('chat');
-        handleSendMessage(e.detail.prompt);
+        handleSendMessageRef.current(e.detail.prompt);
       }
     };
 
@@ -97,10 +99,12 @@ export const CopilotWidget: React.FC = () => {
     return () => {
       window.removeEventListener('clara-ask-question' as any, handleAskClaraEvent as any);
     };
-  }, [patients, sessions, profile, isLoading]);
+  }, []);
 
-  // Compute Proactive Insights from ClaraEngine
-  const proactiveInsights = ClaraEngine.generateProactiveInsights(patients, sessions, profile);
+  // Compute Proactive Insights from ClaraEngine (memoized for performance)
+  const proactiveInsights = useMemo(() => {
+    return ClaraEngine.generateProactiveInsights(patients, sessions, profile);
+  }, [patients, sessions, profile]);
 
   /**
    * Directly execute system functions in AppContext and update real database
@@ -130,11 +134,13 @@ export const CopilotWidget: React.FC = () => {
       });
       addToast(`Paciente ${newP.name} cadastrado com sucesso!`, 'success');
     } else if (actionType === 'edit_patient' && payload.id) {
-      updatePatient(payload.id, payload.updates || {});
-      addToast(`Cadastro do paciente atualizado com sucesso!`, 'success');
+      updatePatient(payload.id, payload.updates || {}, 'Clara (Assistente Virtual)');
+    } else if (actionType === 'archive_patient' && (payload.id || payload.patientId)) {
+      updatePatient(payload.id || payload.patientId, { status: 'arquivado' }, 'Clara (Assistente Virtual)');
+    } else if (actionType === 'discharge_patient' && (payload.id || payload.patientId)) {
+      updatePatient(payload.id || payload.patientId, { status: 'alta' }, 'Clara (Assistente Virtual)');
     } else if (actionType === 'delete_patient' && payload.id) {
-      deletePatient(payload.id);
-      addToast(`Paciente removido do sistema.`, 'info');
+      deletePatient(payload.id, profile?.name || 'Clara (Assistente Virtual)');
     } else if (actionType === 'create_session') {
       const matchedP = patients.find(p => p.name.toLowerCase() === (payload.patientName || '').toLowerCase());
       const newS = addSession({
@@ -166,10 +172,19 @@ export const CopilotWidget: React.FC = () => {
         saveClinicalNotes(payload.sessionId, payload.notes || '');
         addToast(`Evolução clínica/prontuário salvo!`, 'success');
       } else {
-        const pSessions = sessions.filter(s => s.patientName.toLowerCase().includes((payload.patientName || '').toLowerCase()));
+        const pName = payload.patientName || '';
+        const pSessions = sessions.filter(s => s.patientName.toLowerCase().includes(pName.toLowerCase()));
         if (pSessions.length > 0) {
           saveClinicalNotes(pSessions[0].id, payload.notes || '');
           addToast(`Evolução clínica registrada para ${pSessions[0].patientName}!`, 'success');
+        } else {
+          const matchedP = patients.find(p => p.name.toLowerCase().includes(pName.toLowerCase()));
+          if (matchedP) {
+            updatePatient(matchedP.id, {
+              initialAnamnesis: matchedP.initialAnamnesis ? `${matchedP.initialAnamnesis}\n\n[${new Date().toLocaleDateString('pt-BR')}] ${payload.notes}` : payload.notes
+            });
+            addToast(`Evolução salva na ficha de ${matchedP.name}!`, 'success');
+          }
         }
       }
     } else if (actionType === 'send_email') {
@@ -182,22 +197,49 @@ export const CopilotWidget: React.FC = () => {
         addToast(`WhatsApp iniciado para ${matchedS.patientName}!`, 'success');
       } else {
         const cleanPhone = (payload.phone || '').replace(/\D/g, '');
-        const link = `https://wa.me/55${cleanPhone || '11999990000'}?text=${encodeURIComponent('Olá! Mensagem do Sessão Certa.')}`;
+        const welcomeText = `Olá ${payload.patientName || ''}, seja bem-vindo(a) ao consultório! Estou à disposição.`;
+        const link = `https://wa.me/55${cleanPhone || '11999990000'}?text=${encodeURIComponent(welcomeText)}`;
         window.open(link, '_blank');
-        addToast(`WhatsApp iniciado para ${payload.patientName}!`, 'success');
+        addToast(`WhatsApp iniciado para ${payload.patientName || 'paciente'}!`, 'success');
       }
     } else if (actionType === 'confirm_session' && payload.sessionId) {
       updateSessionStatus(payload.sessionId, 'confirmada');
       addToast(`Consulta confirmada com sucesso!`, 'success');
-    } else if (actionType === 'mark_paid' && payload.sessionId) {
-      updatePaymentStatus(payload.sessionId, 'pago');
-      addToast(`Pagamento marcado como PAGO!`, 'success');
+    } else if (actionType === 'mark_paid') {
+      if (payload.sessionId) {
+        updatePaymentStatus(payload.sessionId, 'pago');
+        addToast(`Pagamento marcado como PAGO!`, 'success');
+      } else {
+        const pName = payload.patientName || '';
+        const pSessions = sessions.filter(s => s.patientName.toLowerCase().includes(pName.toLowerCase()));
+        if (pSessions.length > 0) {
+          updatePaymentStatus(pSessions[0].id, 'pago');
+          addToast(`Pagamento registrado com sucesso para ${pSessions[0].patientName}!`, 'success');
+        } else {
+          // Create session entry with paid status
+          const today = new Date().toISOString().split('T')[0];
+          addSession({
+            patientName: pName || 'Paciente',
+            date: today,
+            startTime: '10:00',
+            durationMinutes: 50,
+            type: 'presencial',
+            status: 'realizada',
+            price: payload.amount || 150,
+            paymentStatus: 'pago'
+          });
+          addToast(`Pagamento de R$ ${payload.amount || 150},00 registrado com sucesso!`, 'success');
+        }
+      }
     } else if (actionType === 'open_prontuario') {
       window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: 'patients' } }));
       if (payload.patientName) {
         window.dispatchEvent(new CustomEvent('open-patient-detail', { detail: { patientName: payload.patientName } }));
       }
       addToast(`Prontuário de ${payload.patientName || 'paciente'} aberto na tela.`, 'info');
+    } else if (actionType === 'open_patients_list') {
+      window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: 'patients' } }));
+      addToast(`Lista de pacientes aberta.`, 'info');
     }
   };
 
@@ -225,8 +267,12 @@ export const CopilotWidget: React.FC = () => {
 
     if (localResult.executeImmediately) {
       executeClaraAction(localResult.executeImmediately.type, localResult.executeImmediately.payload);
-      setInProgressState(null);
-    } else if (localResult.nextInProgressState) {
+      if (localResult.nextInProgressState !== undefined) {
+        setInProgressState(localResult.nextInProgressState);
+      } else {
+        setInProgressState(null);
+      }
+    } else if (localResult.nextInProgressState !== undefined) {
       setInProgressState(localResult.nextInProgressState);
     } else {
       setInProgressState(null);
@@ -538,12 +584,35 @@ export const CopilotWidget: React.FC = () => {
                     let activePrompts = quickPrompts;
                     const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
 
-                    if (inProgressState && (inProgressState.type === 'add_patient_wizard' || inProgressState.type === 'add_patient')) {
+                    if (inProgressState && inProgressState.type && inProgressState.type !== 'IDLE') {
+                      const type = inProgressState.type;
                       const step = inProgressState.step;
-                      if (step === 'awaiting_confirmation') {
-                        activePrompts = ['Sim, confirmar cadastro', 'Cancelar cadastro'];
-                      } else if (['awaiting_phone', 'awaiting_email', 'awaiting_cpf', 'awaiting_emergency', 'awaiting_notes', 'awaiting_price'].includes(step || '')) {
-                        activePrompts = ['Pular este campo', 'Cancelar cadastro'];
+
+                      if (type === 'add_patient_wizard' || type.startsWith('AGUARDANDO_')) {
+                        if (step === 'awaiting_confirmation' || type === 'AGUARDANDO_CONFIRMACAO') {
+                          activePrompts = ['Sim, confirmar cadastro', 'Cancelar'];
+                        } else if (type === 'AGUARDANDO_CONFIRMACAO_EXCLUSAO') {
+                          const targetName = inProgressState.data?.patientName ? inProgressState.data.patientName.toUpperCase() : '';
+                          activePrompts = [targetName ? `EXCLUIR ${targetName}` : 'EXCLUIR PACIENTE', 'Cancelar'];
+                        } else if (type === 'AGUARDANDO_CONFIRMACAO_ARQUIVAR') {
+                          activePrompts = ['Sim, arquivar paciente', 'Cancelar'];
+                        } else if (type === 'AGUARDANDO_CONFIRMACAO_ALTA') {
+                          activePrompts = ['Sim, dar alta', 'Cancelar'];
+                        } else if (['awaiting_phone', 'awaiting_email', 'awaiting_cpf', 'awaiting_emergency', 'awaiting_notes', 'awaiting_price'].includes(step || '')) {
+                          activePrompts = ['Pular este campo', 'Cancelar'];
+                        } else {
+                          activePrompts = ['Cancelar'];
+                        }
+                      } else if (type === 'post_registration_options' || type === 'open_prontuario_after_add') {
+                        activePrompts = [
+                          '1️⃣ Agendar primeira consulta',
+                          '2️⃣ Abrir prontuário',
+                          '3️⃣ Registrar evolução',
+                          '4️⃣ Registrar pagamento',
+                          '5️⃣ Agendar retorno',
+                          '6️⃣ Enviar e-mail',
+                          '7️⃣ Voltar para a lista'
+                        ];
                       }
                     } else if (lastMsg && lastMsg.text.includes('Deseja abrir o prontuário')) {
                       activePrompts = ['Sim, abrir prontuário agora', 'Não, obrigado'];

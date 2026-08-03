@@ -1,7 +1,16 @@
-export type PatientStatus = 'ativo' | 'pausa' | 'alta';
+export type PatientStatus = 'ativo' | 'arquivado' | 'alta' | 'pausa';
 export type AttendanceType = 'online' | 'presencial' | 'hibrido';
 export type SessionStatus = 'agendada' | 'confirmada' | 'solicita_reagendamento' | 'realizada' | 'cancelada_paciente' | 'cancelada_psicologo' | 'falta';
 export type PaymentStatus = 'pago' | 'pendente' | 'isento';
+
+export interface PatientChangeHistoryItem {
+  id: string;
+  timestamp: string; // e.g. "01/08/2026 17:50"
+  user: string; // "Clara (Assistente Virtual)" or "Psicólogo(a)"
+  field: string;
+  oldValue: string;
+  newValue: string;
+}
 
 export interface Patient {
   id: string;
@@ -23,6 +32,7 @@ export interface Patient {
   neighborhood?: string;
   country?: string; // Default: 'Brasil'
   notes?: string;
+  changeHistory?: PatientChangeHistoryItem[];
 }
 
 export interface Session {
@@ -32,6 +42,7 @@ export interface Session {
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
+  durationMinutes?: number;
   type: AttendanceType;
   videoUrl?: string;
   price: number;
@@ -92,6 +103,8 @@ export interface AuditLog {
 
 export interface DashboardStats {
   activePatientsCount: number;
+  archivedPatientsCount?: number;
+  dischargedPatientsCount?: number;
   monthlySessionsCount: number;
   monthlyRevenueReceived: number;
   monthlyRevenuePending: number;
@@ -134,6 +147,8 @@ export type ClaraActionType =
   | 'add_patient'
   | 'edit_patient'
   | 'delete_patient'
+  | 'archive_patient'
+  | 'discharge_patient'
   | 'create_session'
   | 'reschedule_session'
   | 'cancel_session'
@@ -143,6 +158,8 @@ export type ClaraActionType =
   | 'confirm_session'
   | 'mark_paid'
   | 'open_prontuario'
+  | 'open_patients_list'
+  | 'open_schedule'
   | 'send_whatsapp_reminder';
 
 export interface ClaraPendingAction {

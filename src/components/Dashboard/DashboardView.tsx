@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Session } from '../../types';
 import { ConsultorioIntelligenceCard } from '../AI/ConsultorioIntelligenceCard';
@@ -79,110 +79,160 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [expandedAlerts, setExpandedAlerts] = useState(true);
 
-  // Active Patients
-  const activePatients = patients.filter((p) => p.status === 'ativo');
-  
-  // Date Helpers
-  const todayObj = new Date();
-  const todayStr = todayObj.toISOString().split('T')[0];
+  // Memoize all dashboard metric calculations to avoid re-computations on unrelated state updates
+  const {
+    activePatients,
+    archivedPatients,
+    dischargedPatients,
+    displayDate,
+    todaySessions,
+    confirmedToday,
+    pendingToday,
+    rescheduleToday,
+    completedToday,
+    onlineTodayCount,
+    presencialTodayCount,
+    firstConsultationsToday,
+    weekSessionsCount,
+    pendingConfirmationsCount,
+    incompleteNotesSessions,
+    pendingPaymentSessions,
+    greetingTime,
+    contextualMessage,
+    GreetingIcon,
+    nextSession,
+    last30DaysData
+  } = useMemo(() => {
+    // Active & Archived Patients
+    const activePatients = patients.filter((p) => p.status === 'ativo');
+    const archivedPatients = patients.filter((p) => p.status === 'arquivado');
+    const dischargedPatients = patients.filter((p) => p.status === 'alta');
+    
+    // Date Helpers
+    const todayObj = new Date();
+    const todayStr = todayObj.toISOString().split('T')[0];
 
-  const formattedDate = todayObj.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-  // Capitalize first letter of formatted date
-  const displayDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+    const formattedDate = todayObj.toLocaleDateString('pt-BR', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const displayDate = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
 
-  // Today's Sessions sorted chronologically
-  const todaySessions = sessions
-    .filter((s) => s.date === todayStr)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    // Today's Sessions sorted chronologically
+    const todaySessions = sessions
+      .filter((s) => s.date === todayStr)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  const confirmedToday = todaySessions.filter((s) => s.status === 'confirmada').length;
-  const pendingToday = todaySessions.filter((s) => s.status === 'agendada').length;
-  const rescheduleToday = todaySessions.filter((s) => s.status === 'solicita_reagendamento').length;
-  const completedToday = todaySessions.filter((s) => s.status === 'realizada').length;
+    const confirmedToday = todaySessions.filter((s) => s.status === 'confirmada').length;
+    const pendingToday = todaySessions.filter((s) => s.status === 'agendada').length;
+    const rescheduleToday = todaySessions.filter((s) => s.status === 'solicita_reagendamento').length;
+    const completedToday = todaySessions.filter((s) => s.status === 'realizada').length;
 
-  // Modality Breakdown
-  const onlineTodayCount = todaySessions.filter((s) => s.type === 'online').length;
-  const presencialTodayCount = todaySessions.filter((s) => s.type === 'presencial').length;
+    // Modality Breakdown
+    const onlineTodayCount = todaySessions.filter((s) => s.type === 'online').length;
+    const presencialTodayCount = todaySessions.filter((s) => s.type === 'presencial').length;
 
-  // First Consultations (Novos Pacientes no dia)
-  const firstConsultationsToday = todaySessions.filter((s) => {
-    const p = patients.find((pat) => pat.id === s.patientId || pat.name === s.patientName);
-    return p && p.createdAt && p.createdAt.startsWith(todayStr);
-  }).length;
+    // First Consultations (Novos Pacientes no dia)
+    const firstConsultationsToday = todaySessions.filter((s) => {
+      const p = patients.find((pat) => pat.id === s.patientId || pat.name === s.patientName);
+      return p && p.createdAt && p.createdAt.startsWith(todayStr);
+    }).length;
 
-  // Week Sessions calculation
-  const startOfWeek = new Date(todayObj);
-  const dayOfWeek = startOfWeek.getDay(); // 0 (Sun) to 6 (Sat)
-  startOfWeek.setDate(todayObj.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Monday
-  const endOfWeek = new Date(startOfWeek);
-  endOfWeek.setDate(startOfWeek.getDate() + 6); // Sunday
+    // Week Sessions calculation
+    const startOfWeek = new Date(todayObj);
+    const dayOfWeek = startOfWeek.getDay(); // 0 (Sun) to 6 (Sat)
+    startOfWeek.setDate(todayObj.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1)); // Monday
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6); // Sunday
 
-  const weekSessionsCount = sessions.filter((s) => {
-    const sDate = new Date(s.date + 'T00:00:00');
-    return sDate >= startOfWeek && sDate <= endOfWeek;
-  }).length;
+    const weekSessionsCount = sessions.filter((s) => {
+      const sDate = new Date(s.date + 'T00:00:00');
+      return sDate >= startOfWeek && sDate <= endOfWeek;
+    }).length;
 
-  // Total Pending Confirmations
-  const pendingConfirmationsCount = pendingToday + rescheduleToday;
+    // Total Pending Confirmations
+    const pendingConfirmationsCount = pendingToday + rescheduleToday;
 
-  // Incomplete Clinical Notes (Prontuários sem anotação nas sessões realizadas)
-  const incompleteNotesSessions = sessions.filter(
-    (s) => s.status === 'realizada' && (!s.clinicalNotes || s.clinicalNotes.trim() === '')
-  );
+    // Incomplete Clinical Notes (Prontuários sem anotação nas sessões realizadas)
+    const incompleteNotesSessions = sessions.filter(
+      (s) => s.status === 'realizada' && (!s.clinicalNotes || s.clinicalNotes.trim() === '')
+    );
 
-  // Pending Payments for completed sessions
-  const pendingPaymentSessions = sessions.filter(
-    (s) => s.status === 'realizada' && s.paymentStatus === 'pendente'
-  );
+    // Pending Payments for completed sessions
+    const pendingPaymentSessions = sessions.filter(
+      (s) => s.status === 'realizada' && s.paymentStatus === 'pendente'
+    );
 
-  // Greeting based on current hour with welcoming tone
-  const currentHour = todayObj.getHours();
-  const currentMinute = todayObj.getMinutes();
-  const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-  
-  let greetingTime = 'Bom dia';
-  let contextualMessage = 'Preparamos sua agenda e pendências com clareza para um dia calmo e produtivo.';
-  let GreetingIcon = Sun;
+    // Greeting based on current hour with welcoming tone
+    const currentHour = todayObj.getHours();
+    const currentMinute = todayObj.getMinutes();
+    const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+    
+    let greetingTime = 'Bom dia';
+    let contextualMessage = 'Preparamos sua agenda e pendências com clareza para um dia calmo e produtivo.';
+    let GreetingIcon = Sun;
 
-  if (currentHour >= 12 && currentHour < 18) {
-    greetingTime = 'Boa tarde';
-    contextualMessage = 'Seus atendimentos da tarde estão organizados. Acompanhe os próximos passos com serenidade.';
-    GreetingIcon = Sunset;
-  } else if (currentHour >= 18) {
-    greetingTime = 'Boa noite';
-    contextualMessage = 'Excelente trabalho hoje! Confira o encerramento do expediente e os lembretes para amanhã.';
-    GreetingIcon = Moon;
-  }
+    if (currentHour >= 12 && currentHour < 18) {
+      greetingTime = 'Boa tarde';
+      contextualMessage = 'Seus atendimentos da tarde estão organizados. Acompanhe os próximos passos com serenidade.';
+      GreetingIcon = Sunset;
+    } else if (currentHour >= 18) {
+      greetingTime = 'Boa noite';
+      contextualMessage = 'Excelente trabalho hoje! Confira o encerramento do expediente e os lembretes para amanhã.';
+      GreetingIcon = Moon;
+    }
 
-  // Identify NEXT UPCOMING SESSION TODAY
-  const nextSession =
-    todaySessions.find(
-      (s) =>
-        s.startTime >= currentTimeStr &&
-        s.status !== 'realizada' &&
-        s.status !== 'cancelada_paciente' &&
-        s.status !== 'cancelada_psicologo'
-    ) ||
-    todaySessions.find(
-      (s) =>
-        s.status !== 'realizada' &&
-        s.status !== 'cancelada_paciente' &&
-        s.status !== 'cancelada_psicologo'
-    ) ||
-    (todaySessions.length > 0 ? todaySessions[0] : null);
+    // Identify NEXT UPCOMING SESSION TODAY
+    const nextSession =
+      todaySessions.find(
+        (s) =>
+          s.startTime >= currentTimeStr &&
+          s.status !== 'realizada' &&
+          s.status !== 'cancelada_paciente' &&
+          s.status !== 'cancelada_psicologo'
+      ) ||
+      todaySessions.find(
+        (s) =>
+          s.status !== 'realizada' &&
+          s.status !== 'cancelada_paciente' &&
+          s.status !== 'cancelada_psicologo'
+      ) ||
+      (todaySessions.length > 0 ? todaySessions[0] : null);
 
-  // 30-Day Attendance Evolution Data for the main chart
-  const last30DaysData = [
-    { periodo: 'Semana 1', realizadas: 12, agendadas: 14 },
-    { periodo: 'Semana 2', realizadas: 16, agendadas: 18 },
-    { periodo: 'Semana 3', realizadas: 19, agendadas: 20 },
-    { periodo: 'Semana 4 (Atual)', realizadas: completedToday || 18, agendadas: todaySessions.length || 22 },
-  ];
+    // 30-Day Attendance Evolution Data for the main chart
+    const last30DaysData = [
+      { periodo: 'Semana 1', realizadas: 12, agendadas: 14 },
+      { periodo: 'Semana 2', realizadas: 16, agendadas: 18 },
+      { periodo: 'Semana 3', realizadas: 19, agendadas: 20 },
+      { periodo: 'Semana 4 (Atual)', realizadas: completedToday || 18, agendadas: todaySessions.length || 22 },
+    ];
+
+    return {
+      activePatients,
+      archivedPatients,
+      dischargedPatients,
+      displayDate,
+      todaySessions,
+      confirmedToday,
+      pendingToday,
+      rescheduleToday,
+      completedToday,
+      onlineTodayCount,
+      presencialTodayCount,
+      firstConsultationsToday,
+      weekSessionsCount,
+      pendingConfirmationsCount,
+      incompleteNotesSessions,
+      pendingPaymentSessions,
+      greetingTime,
+      contextualMessage,
+      GreetingIcon,
+      nextSession,
+      last30DaysData
+    };
+  }, [patients, sessions]);
 
   // Recent Activity Stream
   const recentActivities = [
@@ -653,7 +703,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </button>
             </div>
             <p className="text-[11px] text-slate-400 mt-2 font-medium">
-              {firstConsultationsToday > 0 ? `${firstConsultationsToday} primeira(s) consulta(s) hoje` : 'Acompanhamento clínico contínuo'}
+              🟢 {activePatients.length} Ativos • 📦 {archivedPatients.length} Arquivados • 🎓 {dischargedPatients.length} Alta
             </p>
           </div>
 
