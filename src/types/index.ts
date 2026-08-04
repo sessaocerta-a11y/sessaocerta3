@@ -159,6 +159,7 @@ export type ClaraActionType =
   | 'mark_paid'
   | 'open_prontuario'
   | 'open_patients_list'
+  | 'open_patients_tab'
   | 'open_schedule'
   | 'send_whatsapp_reminder';
 
@@ -190,15 +191,35 @@ export interface ClaraPendingAction {
   missingField?: string;
 }
 
+export type ClaraActionId =
+  | 'CHECK_MONTH_REVENUE'
+  | 'OPEN_FINANCIAL'
+  | 'OPEN_SCHEDULE'
+  | 'OPEN_PATIENT_RECORD'
+  | 'CHECK_PENDING_PAYMENTS'
+  | 'OPEN_AGENDA_TOMORROW'
+  | 'CHECK_FREE_SLOTS'
+  | 'OPEN_WAITING_LIST'
+  | 'CHECK_BIRTHDAYS'
+  | 'CHECK_UNFINISHED_RECORDS'
+  | 'CONFIRM_SESSION'
+  | 'SEND_WHATSAPP_REMINDER'
+  | 'CREATE_PATIENT';
+
 export interface ClaraProactiveInsight {
   id: string;
-  category: 'agenda' | 'finance' | 'opportunity' | 'performance' | 'birthday';
+  category: 'agenda' | 'finance' | 'opportunity' | 'performance' | 'birthday' | 'prontuario' | 'confirmation';
+  priority: 'critical' | 'important' | 'attention' | 'suggestion';
   title: string;
   description: string;
   badgeText: string;
-  badgeColor: string; // e.g. emerald, amber, sky, purple
+  badgeColor: string; // e.g. rose, amber, yellow, emerald, purple, sky
   actionLabel?: string;
+  actionId?: ClaraActionId;
   actionPrompt?: string;
+  systemTab?: string; // e.g. 'schedule', 'finance', 'patients'
+  actionType?: ClaraActionType;
+  actionPayload?: any;
   pendingAction?: ClaraPendingAction;
 }
 

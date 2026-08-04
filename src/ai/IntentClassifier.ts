@@ -143,12 +143,13 @@ export class IntentClassifier {
 
     // 11. Consultar Financeiro
     if (
-      lower.includes('faturamento') || lower.includes('financeiro') ||
-      lower.includes('quanto recebi') || lower.includes('pagamentos') ||
-      lower.includes('pendentes') || lower.includes('pendencias') ||
-      lower.includes('receita')
+      lower.includes('faturamento') || lower.includes('faturei') || lower.includes('faturar') ||
+      lower.includes('financeiro') || lower.includes('quanto recebi') || lower.includes('quanto faturei') ||
+      lower.includes('quanto ganhei') || lower.includes('pagamentos') || lower.includes('pendentes') ||
+      lower.includes('pendencias') || lower.includes('receita') || lower.includes('lucro') ||
+      lower.includes('saldo') || lower.includes('valor faturado')
     ) {
-      return { intent: 'CONSULTAR_FINANCEIRO', confidence: 0.85 };
+      return { intent: 'CONSULTAR_FINANCEIRO', confidence: 0.9 };
     }
 
     // 12. Consultar Prontuários

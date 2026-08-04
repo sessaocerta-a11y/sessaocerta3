@@ -84,6 +84,30 @@ export const CopilotWidget: React.FC = () => {
 
   const handleSendMessageRef = useRef<(prompt?: string) => void>(() => {});
 
+  useEffect(() => {
+    handleSendMessageRef.current = handleSendMessage;
+  });
+
+  // Once-a-day Executive Greeting Briefing
+  useEffect(() => {
+    const { todayStr } = ClaraEngine.getDateHelpers();
+    const lastBriefingDate = localStorage.getItem('clara_last_briefing_date');
+    if (lastBriefingDate !== todayStr && profile) {
+      const briefing = ClaraEngine.generateMorningBriefing(patients, sessions, profile);
+      const briefingMsg: ClaraChatMessage = {
+        id: `briefing-${Date.now()}`,
+        sender: 'ai',
+        text: briefing.summaryText,
+        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      };
+      setMessages((prev) => {
+        if (prev.some((m) => m.id.startsWith('briefing-'))) return prev;
+        return [briefingMsg, ...prev];
+      });
+      localStorage.setItem('clara_last_briefing_date', todayStr);
+    }
+  }, [patients, sessions, profile]);
+
   // Listen for global custom event 'clara-ask-question' to open Clara and send prompt
   useEffect(() => {
     const handleAskClaraEvent = (e: CustomEvent<{ prompt: string }>) => {
@@ -237,9 +261,10 @@ export const CopilotWidget: React.FC = () => {
         window.dispatchEvent(new CustomEvent('open-patient-detail', { detail: { patientName: payload.patientName } }));
       }
       addToast(`Prontuário de ${payload.patientName || 'paciente'} aberto na tela.`, 'info');
-    } else if (actionType === 'open_patients_list') {
+    } else if (actionType === 'open_patients_list' || actionType === 'open_patients_tab') {
       window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: 'patients' } }));
-      addToast(`Lista de pacientes aberta.`, 'info');
+      window.dispatchEvent(new CustomEvent('open-new-patient-modal'));
+      addToast(`Aba de pacientes e formulário de cadastro abertos!`, 'info');
     }
   };
 
@@ -514,6 +539,52 @@ export const CopilotWidget: React.FC = () => {
                         >
                           <div className="whitespace-pre-line leading-relaxed">{msg.text}</div>
 
+                          {/* Interactive Action Chips (e.g. [08:00], [Agendar Paciente], [Enviar Cobrança WhatsApp]) */}
+                          {msg.sender === 'ai' && (
+                            (() => {
+                              const matches = Array.from(msg.text.matchAll(/\[(.*?)\]/g)).map((m) => m[1]);
+                              if (matches.length === 0) return null;
+                              return (
+                                <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-800/80">
+                                  {matches.map((chip, idx) => {
+                                    const isTimeSlot = /^\d{2}:\d{2}$/.test(chip);
+                                    return (
+                                      <button
+                                        key={idx}
+                                        onClick={() => {
+                                          if (isTimeSlot) {
+                                            handleSendMessage(`Agendar consulta às ${chip}`);
+                                          } else if (chip.includes('WhatsApp')) {
+                                            handleSendMessage(`Mandar mensagem WhatsApp para o paciente`);
+                                          } else if (chip.includes('Pago')) {
+                                            handleSendMessage(`Marcar pagamento pendente como pago`);
+                                          } else if (chip.includes('Cadastrar') || chip.includes('Paciente')) {
+                                            window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: 'patients' } }));
+                                            window.dispatchEvent(new CustomEvent('open-new-patient-modal'));
+                                            handleSendMessage(`Cadastrar novo paciente`);
+                                          } else if (chip.includes('Cancelar')) {
+                                            setInProgressState(null);
+                                            handleSendMessage(`Cancelar`);
+                                          } else {
+                                            handleSendMessage(chip);
+                                          }
+                                        }}
+                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shadow-sm flex items-center gap-1 ${
+                                          isTimeSlot
+                                            ? 'bg-emerald-950/80 text-emerald-300 hover:bg-emerald-800 hover:text-white border border-emerald-500/30'
+                                            : 'bg-slate-900 text-slate-200 hover:bg-emerald-950 hover:text-emerald-300 border border-slate-700 hover:border-emerald-500/40'
+                                        }`}
+                                      >
+                                        {isTimeSlot && <Sparkles className="w-3 h-3 text-emerald-400" />}
+                                        <span>{chip}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()
+                          )}
+
                           {/* Interactive Action Confirmation Card */}
                           {msg.pendingAction && !msg.actionExecuted && (
                             <div className="mt-2 p-2.5 rounded-xl bg-slate-900 border border-emerald-500/40 text-slate-200 space-y-2">
@@ -670,44 +741,98 @@ export const CopilotWidget: React.FC = () => {
                   <div className="p-2.5 rounded-2xl bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/30 text-xs text-slate-200 space-y-1">
                     <div className="flex items-center gap-1.5 font-bold text-emerald-300">
                       <Zap className="w-4 h-4 text-amber-400" />
-                      <span>Modo Proativo Ativado</span>
+                      <span>Clara Insight Engine V2</span>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                      A Clara monitora seu consultório em tempo real e alerta sobre horários, pagamentos e oportunidades.
+                      Monitoramento contínuo em tempo real. Cards inteligentes com prioridade que somem automaticamente ao serem resolvidos.
                     </p>
                   </div>
 
-                  {proactiveInsights.map((insight) => (
-                    <div
-                      key={insight.id}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 transition-all space-y-2 shadow-sm"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                          {insight.badgeText}
-                        </span>
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                      </div>
-
-                      <h4 className="text-xs font-bold text-white">{insight.title}</h4>
-                      <p className="text-[11px] text-slate-300 leading-relaxed">
-                        {insight.description}
-                      </p>
-
-                      {insight.actionPrompt && (
-                        <button
-                          onClick={() => {
-                            setActiveTab('chat');
-                            handleSendMessage(insight.actionPrompt);
-                          }}
-                          className="w-full mt-1 py-1.5 px-3 bg-slate-950 hover:bg-emerald-950 border border-slate-800 hover:border-emerald-500/40 text-[11px] text-emerald-300 font-bold rounded-xl transition-all flex items-center justify-between group"
-                        >
-                          <span>{insight.actionLabel || 'Consultar sobre isso'}</span>
-                          <ArrowRight className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-x-1 transition-transform" />
-                        </button>
-                      )}
+                  {proactiveInsights.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-xs space-y-2 bg-slate-900/40 rounded-2xl border border-slate-800">
+                      <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                      <p className="font-bold text-white">Tudo em Dia no Consultório!</p>
+                      <p className="text-[11px] text-slate-400">Não há pendências críticas, prontuários em atraso ou pagamentos pendentes no momento.</p>
                     </div>
-                  ))}
+                  ) : (
+                    proactiveInsights.map((insight) => {
+                      let badgeStyle = 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+                      if (insight.priority === 'critical') {
+                        badgeStyle = 'bg-rose-500/15 text-rose-300 border-rose-500/30 animate-pulse';
+                      } else if (insight.priority === 'important') {
+                        badgeStyle = 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+                      } else if (insight.priority === 'attention') {
+                        badgeStyle = 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30';
+                      }
+
+                      return (
+                        <div
+                          key={insight.id}
+                          className={`p-3.5 rounded-2xl bg-slate-900 border transition-all space-y-2 shadow-sm ${
+                            insight.priority === 'critical'
+                              ? 'border-rose-500/40 hover:border-rose-400'
+                              : 'border-slate-800 hover:border-emerald-500/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeStyle}`}>
+                              {insight.badgeText}
+                            </span>
+                            <Sparkles className={`w-3.5 h-3.5 ${insight.priority === 'critical' ? 'text-rose-400' : 'text-emerald-400'}`} />
+                          </div>
+
+                          <h4 className="text-xs font-bold text-white">{insight.title}</h4>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            {insight.description}
+                          </p>
+
+                          <button
+                            onClick={() => {
+                              // 1. Switch system tab if configured
+                              if (insight.systemTab) {
+                                window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: insight.systemTab } }));
+                                if (insight.actionType === 'open_prontuario' && insight.actionPayload?.patientName) {
+                                  window.dispatchEvent(new CustomEvent('open-patient-detail', { detail: { patientName: insight.actionPayload.patientName } }));
+                                }
+                              }
+
+                              // 2. Action Dispatcher (No NLP, No text prompt, No fallback)
+                              if (insight.actionId) {
+                                const result = ClaraEngine.dispatchAction(
+                                  insight.actionId,
+                                  insight.actionPayload || {},
+                                  patients,
+                                  sessions,
+                                  profile
+                                );
+
+                                if (result.executeImmediately) {
+                                  executeClaraAction(result.executeImmediately.type, result.executeImmediately.payload || {});
+                                }
+
+                                const aiMsg: ClaraChatMessage = {
+                                  id: `action-res-${Date.now()}`,
+                                  sender: 'ai',
+                                  text: result.text,
+                                  timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                  pendingAction: result.pendingAction
+                                };
+
+                                setMessages((prev) => [...prev, aiMsg]);
+                                setActiveTab('chat');
+                              } else if (insight.actionType && insight.actionType !== 'open_schedule') {
+                                executeClaraAction(insight.actionType, insight.actionPayload || {});
+                              }
+                            }}
+                            className="w-full mt-1 py-1.5 px-3 bg-slate-950 hover:bg-emerald-950 border border-slate-800 hover:border-emerald-500/40 text-[11px] text-emerald-300 font-bold rounded-xl transition-all flex items-center justify-between group"
+                          >
+                            <span>{insight.actionLabel || 'Executar Ação'}</span>
+                            <ArrowRight className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-x-1 transition-transform" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </>

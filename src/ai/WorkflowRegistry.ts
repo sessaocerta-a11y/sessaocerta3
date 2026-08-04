@@ -249,9 +249,13 @@ export class WorkflowRegistry {
         // User typed a custom patient name not yet in system
         data.patientName = EntityExtractor.formatSmartCapitalization(rawPrompt);
       } else {
-        const pList = patients.length > 0
-          ? patients.map(p => `• **${p.name}**`).join('\n')
-          : '*(Nenhum paciente cadastrado)*';
+        if (patients.length === 0) {
+          return {
+            text: `📋 **Nenhum Paciente Cadastrado**\n\nIdentifiquei que seu consultório ainda não possui pacientes cadastrados.\n\nPara agendar uma consulta, primeiro precisamos cadastrar o seu primeiro paciente.\n\nDeseja fazer isso agora?\n\n[Cadastrar Novo Paciente]  [Cancelar]`,
+          };
+        }
+
+        const pList = patients.map(p => `• **${p.name}**`).join('\n');
 
         return {
           text: `🗓️ **Agendamento de Consulta**\n\nQual é o **paciente** para quem deseja agendar a consulta?\n\n**Pacientes em seu consultório:**\n${pList}`,

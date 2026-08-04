@@ -57,15 +57,23 @@ function MainAppContent({
     }
   }, [isAdmin]);
 
-  // Listener para troca de abas via assistente Clara
+  // Listener para troca de abas e modais via assistente Clara
   React.useEffect(() => {
     const handleSwitchTab = (e: any) => {
       if (e.detail?.tab) {
         setActiveTab(e.detail.tab);
       }
     };
+    const handleOpenNewPatientModal = () => {
+      setPatientToEdit(null);
+      setIsNewPatientModalOpen(true);
+    };
     window.addEventListener('switch-tab', handleSwitchTab);
-    return () => window.removeEventListener('switch-tab', handleSwitchTab);
+    window.addEventListener('open-new-patient-modal', handleOpenNewPatientModal);
+    return () => {
+      window.removeEventListener('switch-tab', handleSwitchTab);
+      window.removeEventListener('open-new-patient-modal', handleOpenNewPatientModal);
+    };
   }, []);
 
   const handleLogout = () => {
