@@ -194,6 +194,12 @@ Pendentes: ${pendingCount || 0}`,
     try {
       const { email, name, verificationCode } = req.body;
 
+      logger.info('AUTH', `[DIAGNÓSTICO ROTA] Chamada em /api/auth/send-verification-email`, {
+        email,
+        hasVerificationCode: !!verificationCode,
+        hasResendApiKey: !!process.env.RESEND_API_KEY,
+      });
+
       if (!email || !verificationCode) {
         return res.status(400).json({ error: 'Campos obrigatórios ausentes (email, verificationCode).' });
       }
@@ -201,9 +207,9 @@ Pendentes: ${pendingCount || 0}`,
       const result = await sendVerificationEmail(email, name || 'Profissional', verificationCode);
 
       if (result.success) {
-        logger.audit('AUTH', `E-mail de verificação de cadastro requisitado e despachado`, { email, provider: result.provider });
+        logger.audit('AUTH', `[DIAGNÓSTICO ROTA] E-mail de verificação despachado com sucesso`, { email, provider: result.provider, messageId: result.messageId });
       } else {
-        logger.error('AUTH', `Falha ao enviar e-mail de verificação para o cadastro`, { email, error: result.error });
+        logger.error('AUTH', `[DIAGNÓSTICO ROTA] Falha ao enviar e-mail de verificação`, { email, error: result.error, provider: result.provider });
       }
 
       return res.json({
@@ -218,7 +224,7 @@ Pendentes: ${pendingCount || 0}`,
         messageId: result.messageId
       });
     } catch (error: any) {
-      logger.error('AUTH', 'Exceção crítica na rota de e-mail de verificação', { error: error.message });
+      logger.error('AUTH', '[DIAGNÓSTICO ROTA] Exceção crítica na rota de e-mail de verificação', { error: error.message });
       res.status(500).json({ error: 'Erro ao processar envio de e-mail', details: error.message });
     }
   });
@@ -227,6 +233,12 @@ Pendentes: ${pendingCount || 0}`,
   app.post('/api/auth/send-welcome-email', async (req, res) => {
     try {
       const { email, name, loginUrl } = req.body;
+
+      logger.info('AUTH', `[DIAGNÓSTICO ROTA] Chamada em /api/auth/send-welcome-email`, {
+        email,
+        hasResendApiKey: !!process.env.RESEND_API_KEY,
+      });
+
       if (!email) {
         return res.status(400).json({ error: 'Campo e-mail é obrigatório.' });
       }
@@ -234,7 +246,9 @@ Pendentes: ${pendingCount || 0}`,
       const result = await sendWelcomeEmail(email, name || 'Profissional', loginUrl);
 
       if (result.success) {
-        logger.audit('AUTH', `E-mail de boas-vindas despachado para ${email}`);
+        logger.audit('AUTH', `[DIAGNÓSTICO ROTA] E-mail de boas-vindas despachado com sucesso para ${email}`, { messageId: result.messageId });
+      } else {
+        logger.error('AUTH', `[DIAGNÓSTICO ROTA] Falha no e-mail de boas-vindas para ${email}`, { error: result.error });
       }
 
       return res.json({
@@ -244,7 +258,7 @@ Pendentes: ${pendingCount || 0}`,
         error: result.error || null
       });
     } catch (error: any) {
-      logger.error('AUTH', 'Erro na rota de e-mail de boas-vindas', { error: error.message });
+      logger.error('AUTH', '[DIAGNÓSTICO ROTA] Erro na rota de e-mail de boas-vindas', { error: error.message });
       res.status(500).json({ error: 'Erro ao enviar e-mail de boas-vindas', details: error.message });
     }
   });
@@ -253,6 +267,13 @@ Pendentes: ${pendingCount || 0}`,
   app.post('/api/auth/send-password-reset', async (req, res) => {
     try {
       const { email, name, resetToken, resetUrl } = req.body;
+
+      logger.info('AUTH', `[DIAGNÓSTICO ROTA] Chamada em /api/auth/send-password-reset`, {
+        email,
+        hasResetToken: !!resetToken,
+        hasResendApiKey: !!process.env.RESEND_API_KEY,
+      });
+
       if (!email || !resetToken) {
         return res.status(400).json({ error: 'Campos obrigatórios ausentes (email, resetToken).' });
       }
@@ -260,7 +281,9 @@ Pendentes: ${pendingCount || 0}`,
       const result = await sendPasswordResetEmail(email, name || 'Profissional', resetToken, resetUrl);
 
       if (result.success) {
-        logger.audit('AUTH', `E-mail de recuperação de senha enviado para ${email}`);
+        logger.audit('AUTH', `[DIAGNÓSTICO ROTA] E-mail de recuperação de senha enviado com sucesso para ${email}`, { messageId: result.messageId });
+      } else {
+        logger.error('AUTH', `[DIAGNÓSTICO ROTA] Falha na recuperação de senha para ${email}`, { error: result.error });
       }
 
       return res.json({
@@ -270,7 +293,7 @@ Pendentes: ${pendingCount || 0}`,
         error: result.error || null
       });
     } catch (error: any) {
-      logger.error('AUTH', 'Erro na rota de recuperação de senha', { error: error.message });
+      logger.error('AUTH', '[DIAGNÓSTICO ROTA] Erro na rota de recuperação de senha', { error: error.message });
       res.status(500).json({ error: 'Erro ao enviar e-mail de redefinição de senha', details: error.message });
     }
   });

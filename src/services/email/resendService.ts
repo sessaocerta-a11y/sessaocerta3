@@ -64,9 +64,27 @@ export class ResendService {
     const from = process.env.EMAIL_FROM || 'Sessão Certa <nao-responda@sessaocerta.shop>';
     const apiKey = process.env.RESEND_API_KEY;
 
-    if (!apiKey) {
+    // Log de diagnóstico 1: Quando a função de envio é chamada
+    logger.info('EMAIL_DISPATCH', `[DIAGNÓSTICO RESEND] Função de envio de e-mail invocada`, {
+      to,
+      category,
+      subject,
+    });
+
+    // Log de diagnóstico 2: Verificação da RESEND_API_KEY (sem expor o valor)
+    const keyFound = !!apiKey && apiKey.trim().length > 0;
+    const keyLength = apiKey ? apiKey.trim().length : 0;
+    const keyFormat = keyFound ? (apiKey.startsWith('re_') ? 're_***' : 'Formato Não-Padrão') : 'Ausente';
+
+    logger.info('RESEND_INTEGRATION', `[DIAGNÓSTICO RESEND] Verificação da Variável de Ambiente RESEND_API_KEY`, {
+      keyFound,
+      keyLength,
+      keyFormat,
+    });
+
+    if (!keyFound) {
       const missingKeyError = 'Variável de ambiente RESEND_API_KEY não encontrada no ambiente Vercel/Servidor.';
-      logger.error('RESEND_INTEGRATION', `[ResendService] ${missingKeyError}`, { to, category });
+      logger.error('RESEND_INTEGRATION', `[DIAGNÓSTICO RESEND] ${missingKeyError}`, { to, category });
       return {
         success: false,
         error: missingKeyError,
@@ -95,7 +113,7 @@ export class ResendService {
       // Fallback de contingência caso o ambiente de testes exija onboarding@resend.dev
       if (response.error && response.error.message.toLowerCase().includes('domain')) {
         const fallbackFrom = 'Sessão Certa <onboarding@resend.dev>';
-        logger.warn('RESEND_INTEGRATION', `[ResendService] Ajustando fallback temporário para ${fallbackFrom}`, {
+        logger.warn('RESEND_INTEGRATION', `[DIAGNÓSTICO RESEND] Domínio não autorizado. Tentando fallback temporário para ${fallbackFrom}`, {
           originalFrom: from,
           error: response.error.message,
         });
@@ -110,10 +128,12 @@ export class ResendService {
         });
       }
 
+      // Log de diagnóstico 3: Se houver erro retornado pela API da Resend
       if (response.error) {
-        logger.error('RESEND_INTEGRATION', `[ResendService] Erro retornado pela API do Resend para ${to}`, {
-          error: response.error.message,
-          name: response.error.name,
+        logger.error('RESEND_INTEGRATION', `[DIAGNÓSTICO RESEND] Erro retornado pela API do Resend para ${to}`, {
+          errorMessage: response.error.message,
+          errorName: response.error.name,
+          category,
         });
 
         return {
@@ -135,7 +155,7 @@ export class ResendService {
           meta: { category, ...meta },
         });
 
-        logger.info('EMAIL_DISPATCH', `[ResendService] E-mail despachado com sucesso. Message ID: ${response.data.id}`);
+        logger.info('EMAIL_DISPATCH', `[DIAGNÓSTICO RESEND] E-mail despachado com sucesso. Message ID: ${response.data.id}`);
       }
 
       return {
@@ -145,8 +165,10 @@ export class ResendService {
       };
     } catch (err: any) {
       const errorMessage = err?.message || 'Erro inesperado na API do Resend';
-      logger.error('RESEND_INTEGRATION', `[ResendService] Exceção crítica no envio para ${to}`, {
+      logger.error('RESEND_INTEGRATION', `[DIAGNÓSTICO RESEND] Exceção crítica no envio para ${to}`, {
         exception: errorMessage,
+        errorStack: err?.stack || null,
+        category,
       });
 
       return {
