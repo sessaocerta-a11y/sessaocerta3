@@ -57,15 +57,18 @@ export const CopilotWidget: React.FC = () => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initial welcome message from Clara
-  const [messages, setMessages] = useState<ClaraChatMessage[]>([
-    {
-      id: 'msg-1',
-      sender: 'ai',
-      text: `Olá, ${profile.name ? profile.name.split(' ')[0] : 'Dra. Fernanda'}! 🌸 Eu sou a **Clara**, assistente virtual inteligente e secretária do Sessão Certa.\n\nEstou integrada ao seu consultório para ajudar com sua agenda, pacientes, faturamento e lembretes. Como posso te ajudar hoje?`,
-      timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-    },
-  ]);
+  // Initial welcome message from Clara (smart dynamic greeting)
+  const [messages, setMessages] = useState<ClaraChatMessage[]>(() => {
+    const smart = ClaraEngine.generateSmartGreeting(patients, sessions, profile);
+    return [
+      {
+        id: 'msg-1',
+        sender: 'ai',
+        text: smart.summaryText,
+        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      },
+    ];
+  });
 
   const quickPrompts = [
     'Quais pacientes tenho hoje?',
@@ -88,7 +91,7 @@ export const CopilotWidget: React.FC = () => {
     handleSendMessageRef.current = handleSendMessage;
   });
 
-  // Once-a-day Executive Greeting Briefing
+  // Daily Executive Smart Greeting Briefing
   useEffect(() => {
     const { todayStr } = ClaraEngine.getDateHelpers();
     const lastBriefingDate = localStorage.getItem('clara_last_briefing_date');
@@ -554,14 +557,22 @@ export const CopilotWidget: React.FC = () => {
                                         onClick={() => {
                                           if (isTimeSlot) {
                                             handleSendMessage(`Agendar consulta às ${chip}`);
-                                          } else if (chip.includes('WhatsApp')) {
+                                          } else if (chip.includes('WhatsApp') || chip.includes('Parabéns')) {
                                             handleSendMessage(`Mandar mensagem WhatsApp para o paciente`);
                                           } else if (chip.includes('Pago')) {
                                             handleSendMessage(`Marcar pagamento pendente como pago`);
-                                          } else if (chip.includes('Cadastrar') || chip.includes('Paciente')) {
+                                          } else if (chip.includes('Cadastrar')) {
                                             window.dispatchEvent(new CustomEvent('switch-tab', { detail: { tab: 'patients' } }));
                                             window.dispatchEvent(new CustomEvent('open-new-patient-modal'));
                                             handleSendMessage(`Cadastrar novo paciente`);
+                                          } else if (chip.includes('Prontuário') || chip.includes('Prontuários')) {
+                                            handleSendMessage(`Quais prontuários estão pendentes de preenchimento?`);
+                                          } else if (chip.includes('Pagamento') || chip.includes('Pagamentos')) {
+                                            handleSendMessage(`Quem ainda não pagou?`);
+                                          } else if (chip.includes('Agenda')) {
+                                            handleSendMessage(`Clara, quais pacientes tenho hoje?`);
+                                          } else if (chip.includes('Retorno') || chip.includes('Retornos')) {
+                                            handleSendMessage(`Quais pacientes estão sem retorno?`);
                                           } else if (chip.includes('Cancelar')) {
                                             setInProgressState(null);
                                             handleSendMessage(`Cancelar`);

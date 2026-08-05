@@ -182,22 +182,107 @@ export class ClaraEngine {
   }
 
   /**
-   * Generates Morning Briefing
+   * Generates Smart Personalized Greeting based on local time, real DB state & 30+ phrase library
    */
-  public static generateMorningBriefing(
+  public static generateSmartGreeting(
     patients: Patient[],
     sessions: Session[],
     profile: PsychologistProfile
-  ) {
-    const { todayStr, timeStr, currentYearMonth } = this.getDateHelpers();
-    const practitionerName = profile.name ? profile.name.split(' ')[0] : 'Dra.';
+  ): {
+    greeting: string;
+    summaryText: string;
+    pendingEvolutionsCount?: number;
+    pendingPaymentsCount?: number;
+    patientsWithoutReturnCount?: number;
+  } {
+    const { todayStr } = this.getDateHelpers();
 
+    // 1. Time-based salutation
+    const hour = new Date().getHours();
+    const rawName = profile?.name ? profile.name.trim() : 'Fernanda';
+    let salutationName = rawName;
+
+    if (!rawName.startsWith('Dr.') && !rawName.startsWith('Dra.') && !rawName.startsWith('Dr(a).')) {
+      const firstName = rawName.split(' ')[0];
+      const isFemale = firstName.endsWith('a') || firstName.endsWith('is') || firstName.endsWith('e');
+      salutationName = `${isFemale ? 'Dra.' : 'Dr.'} ${firstName}`;
+    } else {
+      salutationName = rawName.split(' ').slice(0, 2).join(' ');
+    }
+
+    let timeHeader = '';
+    if (hour >= 5 && hour < 12) {
+      timeHeader = `Bom dia, ${salutationName}! ☀️`;
+    } else if (hour >= 12 && hour < 18) {
+      timeHeader = `Boa tarde, ${salutationName}! 😊`;
+    } else {
+      timeHeader = `Boa noite, ${salutationName}! 🌸`;
+    }
+
+    // 2. Phrase library (32 variations) with non-repeat consecutive selection
+    const GREETING_PHRASES = [
+      "Espero que seu dia de atendimentos seja tranquilo. 🌿",
+      "Já dei uma olhada na agenda e tenho algumas sugestões para você. ✨",
+      "Estou pronta para ajudar sempre que precisar. 💼",
+      "Vamos organizar seu consultório juntos? 🤝",
+      "Que bom ter você por aqui novamente! 😊",
+      "Estou à disposição para organizar seus atendimentos e prontuários. 📋",
+      "Tudo pronto para começarmos um excelente dia de clínica? 🚀",
+      "Se precisar de algum encaixe ou confirmação, é só me avisar. 📅",
+      "Acompanhando cada detalhe para que seu foco fique nos pacientes. 🧠",
+      "Pronta para otimizar sua rotina e manter seu faturamento em dia. 💳",
+      "Desejo uma jornada leve e muito produtiva hoje. 🌺",
+      "Sua secretária virtual atenta a todos os prazos e retornos. ⏰",
+      "Que seu dia seja repleto de escuta empática e bons resultados! 💬",
+      "Com tudo sob controle por aqui para você trabalhar com tranquilidade. 🧘‍♀️",
+      "A qualquer momento, basta me pedir qualquer informação do consultório. 🔍",
+      "Organização e eficiência ao alcance de um clique. Vamos em frente! 🌟",
+      "Estou monitorando os lembretes e confirmações das consultas de hoje. 📲",
+      "Sempre ao seu lado para simplificar a gestão do seu consultório. 🛋️",
+      "Sua agenda e finanças estão atualizadas. Como posso ser útil agora? 📊",
+      "Tenho tudo mapeado por aqui para facilitar o seu dia a dia. 📝",
+      "Pronta para ajudar com prontuários, recibos ou novos agendamentos. 💡",
+      "Um dia produtivo começa com planejamento. Estou aqui para o que precisar! ☀️",
+      "A gestão da sua clínica está em boas mãos. Desejo ótimos atendimentos! 🌿",
+      "Pode contar comigo para manter seus atendimentos 100% organizados. 🩺",
+      "Notificações e relatórios prontos para quando você precisar consultar. 📂",
+      "Acompanhando seus pacientes e mantendo a rotina impecável. 👑",
+      "Sempre pronta para antecipar suas necessidades e economizar seu tempo. ⚡",
+      "Sua tranquilidade é nossa prioridade. Vamos aos atendimentos! 🌈",
+      "De olho nos horários livres e cobranças para otimizar seu consultório. 💰",
+      "Seja bem-vindo(a) à sua central de gestão clínica inteligente! 🔮",
+      "Apoio completo para o seu bem-estar e o de seus pacientes. 🕊️",
+      "Mais um dia para transformar vidas com a psicologia. Conte comigo! 💖"
+    ];
+
+    let lastIdx = Number(localStorage.getItem('clara_last_greeting_index') || '-1');
+    let newIdx = Math.floor(Math.random() * GREETING_PHRASES.length);
+    if (newIdx === lastIdx) {
+      newIdx = (newIdx + 1) % GREETING_PHRASES.length;
+    }
+    try {
+      localStorage.setItem('clara_last_greeting_index', String(newIdx));
+    } catch (e) {
+      // Ignore storage errors in restricted contexts
+    }
+    const closingPhrase = GREETING_PHRASES[newIdx];
+
+    // 3. Onboarding Case: 0 Patients
+    if (patients.length === 0) {
+      const summaryText = `${timeHeader}\n\n🎉 **Seja bem-vindo(a) ao Sessão Certa!**\n\nEu sou a **Clara**, sua assistente virtual inteligente e secretária clínica. Estarei ao seu lado durante todo o dia para ajudar na gestão do consultório.\n\nComo seu consultório ainda não possui pacientes cadastrados, minha recomendação inicial é cadastrar seu primeiro paciente para habilitar agendamentos, finanças e prontuários.\n\n[Cadastrar Primeiro Paciente]`;
+      return {
+        greeting: timeHeader,
+        summaryText,
+        pendingEvolutionsCount: 0,
+        pendingPaymentsCount: 0,
+        patientsWithoutReturnCount: 0,
+      };
+    }
+
+    // 4. Real DB Data Gathering
     const todaySessions = sessions
       .filter((s) => s.date === todayStr && s.status !== 'cancelada_paciente' && s.status !== 'cancelada_psicologo')
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-    const confirmedCount = todaySessions.filter((s) => s.status === 'confirmada' || s.status === 'realizada').length;
-    const firstSessionTime = todaySessions.length > 0 ? todaySessions[0].startTime : undefined;
 
     const pendingEvolutions = sessions.filter(
       (s) => s.status === 'realizada' && (!s.clinicalNotes || s.clinicalNotes.trim().length === 0)
@@ -216,44 +301,95 @@ export class ClaraEngine {
       return pSessions.length === 0;
     });
 
-    const monthlyRevenuePaid = sessions
-      .filter((s) => s.date.startsWith(currentYearMonth) && s.paymentStatus === 'pago')
-      .reduce((acc, s) => acc + s.price, 0);
+    // Special Situation A: Appointment starting in < 30 minutes
+    const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+    const upcomingSessionUnder30 = todaySessions.find((s) => {
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const sMin = sh * 60 + sm;
+      const diff = sMin - nowMinutes;
+      return diff >= 0 && diff <= 30;
+    });
 
-    let summaryText = `👋 **Bom dia, ${practitionerName}!**\n\n`;
+    // Special Situation B: Birthday Today
+    const mmddToday = todayStr.substring(5);
+    const birthdayPatients = patients.filter((p) => p.birthDate && p.birthDate.substring(5) === mmddToday);
 
-    if (todaySessions.length > 0) {
-      summaryText += `Hoje você possui **${todaySessions.length} consulta(s)**, sendo **${confirmedCount} confirmada(s)**. `;
-      summaryText += `Seu primeiro atendimento é às **${firstSessionTime}**.\n\n`;
-    } else {
-      summaryText += `Hoje sua agenda está **livre de consultas agendadas**. Um ótimo momento para planejar atendimentos e organizar a gestão clínica!\n\n`;
+    // 5. Build Body Blocks
+    const alertBlocks: string[] = [];
+
+    if (upcomingSessionUnder30) {
+      const pName = upcomingSessionUnder30.patientName;
+      alertBlocks.push(`⏰ **Próximo Atendimento:** Sua consulta com **${pName}** começa às **${upcomingSessionUnder30.startTime}**. Deseja abrir o prontuário antes do atendimento?\n[Abrir Prontuário de ${pName.split(' ')[0]}]`);
     }
 
-    if (pendingEvolutions.length > 0) {
-      summaryText += `📝 **Prontuários:** Há ${pendingEvolutions.length} consulta(s) encerrada(s) que ainda aguardam o preenchimento da evolução clínica.\n`;
+    if (birthdayPatients.length > 0) {
+      const bP = birthdayPatients[0];
+      alertBlocks.push(`🎂 **Aniversário Hoje:** Hoje é aniversário de **${bP.name}**! 🎉 Deseja enviar uma mensagem de felicitações?\n[Mandar Parabéns WhatsApp]`);
+    }
+
+    const statusLines: string[] = [];
+
+    if (todaySessions.length > 0) {
+      const confirmedCount = todaySessions.filter((s) => s.status === 'confirmada' || s.status === 'realizada').length;
+      statusLines.push(`📅 **${todaySessions.length} consulta(s) agendada(s)** (${confirmedCount} confirmada(s))`);
+    } else {
+      if (patientsWithoutReturn.length > 0) {
+        statusLines.push(`📅 **Agenda de hoje livre de consultas.** Que tal aproveitar para entrar em contato com pacientes sem retorno?`);
+      } else {
+        statusLines.push(`📅 **Agenda de hoje livre de consultas.** Ótimo momento para organizar prontuários ou realizar novos encaixes.`);
+      }
     }
 
     if (pendingPayments.length > 0) {
-      const pendingTotal = pendingPayments.reduce((acc, s) => acc + s.price, 0);
-      summaryText += `💰 **Financeiro:** Você possui ${pendingPayments.length} consulta(s) realizada(s) aguardando pagamento (${this.formatCurrency(pendingTotal)}).\n`;
+      const totalPend = pendingPayments.reduce((acc, s) => acc + s.price, 0);
+      statusLines.push(`💰 **${pendingPayments.length} pagamento(s) pendente(s)** (${this.formatCurrency(totalPend)})`);
     }
 
-    if (patientsWithoutReturn.length > 0) {
-      summaryText += `👥 **Relacionamento:** ${patientsWithoutReturn.length} paciente(s) ativo(s) não realizam sessões há mais de 30 dias (${patientsWithoutReturn.slice(0, 2).map((p) => p.name.split(' ')[0]).join(', ')}).\n`;
+    if (pendingEvolutions.length > 0) {
+      statusLines.push(`📝 **${pendingEvolutions.length} prontuário(s) aguardando evolução**`);
     }
 
-    summaryText += `\n📈 **Faturamento do Mês:** ${this.formatCurrency(monthlyRevenuePaid)} recebidos de atendimentos concluídos.`;
+    const summaryBlock = `**Hoje você possui:**\n${statusLines.map(l => `• ${l}`).join('\n')}`;
+
+    // Action Chips
+    const actionChips: string[] = [];
+    if (pendingEvolutions.length > 0) actionChips.push('[Ver Prontuários Pendentes]');
+    if (pendingPayments.length > 0) actionChips.push('[Ver Pagamentos Pendentes]');
+    if (todaySessions.length > 0) actionChips.push('[Ver Agenda de Hoje]');
+    if (patientsWithoutReturn.length > 0 && todaySessions.length === 0) actionChips.push('[Lista de Retornos]');
+
+    const actionChipsStr = actionChips.length > 0 ? `\n\n${actionChips.join('  ')}` : '';
+
+    const fullMessageText = `${timeHeader}\n\n${alertBlocks.length > 0 ? alertBlocks.join('\n\n') + '\n\n' : ''}${summaryBlock}\n\n${closingPhrase}${actionChipsStr}`;
 
     return {
-      greeting: `Bom dia, ${practitionerName}!`,
-      summaryText,
-      todayCount: todaySessions.length,
-      firstSessionTime,
-      confirmedCount,
+      greeting: timeHeader,
+      summaryText: fullMessageText,
       pendingEvolutionsCount: pendingEvolutions.length,
       pendingPaymentsCount: pendingPayments.length,
       patientsWithoutReturnCount: patientsWithoutReturn.length,
-      monthlyRevenuePaid,
+    };
+  }
+
+  /**
+   * Generates Morning Briefing
+   */
+  public static generateMorningBriefing(
+    patients: Patient[],
+    sessions: Session[],
+    profile: PsychologistProfile
+  ) {
+    const smart = this.generateSmartGreeting(patients, sessions, profile);
+    const { todayStr } = this.getDateHelpers();
+    const todaySessions = sessions.filter((s) => s.date === todayStr && s.status !== 'cancelada_paciente' && s.status !== 'cancelada_psicologo');
+
+    return {
+      greeting: smart.greeting,
+      summaryText: smart.summaryText,
+      todayCount: todaySessions.length,
+      pendingEvolutionsCount: smart.pendingEvolutionsCount,
+      pendingPaymentsCount: smart.pendingPaymentsCount,
+      patientsWithoutReturnCount: smart.patientsWithoutReturnCount,
     };
   }
 

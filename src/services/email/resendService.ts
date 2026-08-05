@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Resend } from 'resend';
 import { logger } from '../../utils/logger';
 import { emailAuditDb } from '../emailAuditDb';
@@ -17,10 +18,33 @@ import {
   getSessionConfirmationEmailTemplate,
 } from './emailTemplates';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_jSXGQ2gF_Ap48f8dqgqEuoRPAAV6YjBzY';
-const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM || 'Sessão Certa <nao-responda@sessaocerta.shop>';
+/**
+ * Helper para obter a instância do cliente Resend utilizando estritamente a variável de ambiente.
+ * Nunca utiliza chaves cadastradas diretamente no código-fonte.
+ */
+export function getResendClient(): Resend {
+  const apiKey = process.env.RESEND_API_KEY || '';
+  if (!apiKey) {
+    logger.warn('RESEND_INTEGRATION', '[ResendService] RESEND_API_KEY não foi encontrada em process.env. Verifique o arquivo .env.');
+  }
+  return new Resend(apiKey);
+}
 
-export const resendClient = new Resend(RESEND_API_KEY);
+/**
+ * Instância exportada para retrocompatibilidade que reencaminha chamadas dinamicamente
+ */
+export const resendClient = new Proxy({} as Resend, {
+  get(_target, prop: keyof Resend) {
+    const client = getResendClient();
+    const val = client[prop];
+    if (typeof val === 'function') {
+      return val.bind(client);
+    }
+    return val;
+  },
+});
+
+const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM || 'Sessão Certa <nao-responda@sessaocerta.shop>';
 
 /**
  * Centralized Resend Service for Sessão Certa
