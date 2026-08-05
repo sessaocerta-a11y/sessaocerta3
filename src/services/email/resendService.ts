@@ -61,13 +61,25 @@ export class ResendService {
     category: string,
     meta?: Record<string, any>
   ): Promise<SendEmailResult> {
-    const from = DEFAULT_FROM_EMAIL;
+    const from = process.env.EMAIL_FROM || 'Sessão Certa <nao-responda@sessaocerta.shop>';
+    const apiKey = process.env.RESEND_API_KEY;
+
+    if (!apiKey) {
+      const missingKeyError = 'Variável de ambiente RESEND_API_KEY não encontrada no ambiente Vercel/Servidor.';
+      logger.error('RESEND_INTEGRATION', `[ResendService] ${missingKeyError}`, { to, category });
+      return {
+        success: false,
+        error: missingKeyError,
+        provider: 'Resend',
+      };
+    }
 
     try {
       logger.info('EMAIL_DISPATCH', `[ResendService] Despachando e-mail de ${category} para ${to}`, {
         from,
         subject,
         meta,
+        hasApiKey: true,
       });
 
       // Tentativa oficial usando o domínio oficial sessaocerta.shop (nao-responda@sessaocerta.shop)

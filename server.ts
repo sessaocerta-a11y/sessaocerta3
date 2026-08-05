@@ -16,25 +16,24 @@ import { emailAuditDb } from './src/services/emailAuditDb';
 import { processResendWebhook } from './src/services/webhookService';
 import { logger } from './src/utils/logger';
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
-  app.use(express.json());
+app.use(express.json());
 
-  // Initialize Gemini Client server-side lazily
-  const getGenAI = () => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return null;
-    return new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
+// Initialize Gemini Client server-side lazily
+const getGenAI = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
       },
-    });
-  };
+    },
+  });
+};
 
   // API Route: Copiloto do Consultório (Chat & Administrative Assistant: Clara)
   app.post('/api/ai/copilot', async (req, res) => {
@@ -412,24 +411,30 @@ Pendentes: ${pendingCount || 0}`,
     res.json({ success: true, count: records.length, records });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+export default app;
+export { app };
+
+// In standalone development or Cloud Run mode (non-Vercel environment)
+if (!process.env.VERCEL) {
+  async function startStandaloneServer() {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  startStandaloneServer();
 }
-
-startServer();
