@@ -11,10 +11,10 @@ import {
   sendPasswordResetEmail,
   sendPasswordChangedEmail,
   sendSessionConfirmationEmail
-} from './src/services/emailService';
-import { emailAuditDb } from './src/services/emailAuditDb';
-import { processResendWebhook } from './src/services/webhookService';
-import { logger } from './src/utils/logger';
+} from './src/services/emailService.js';
+import { emailAuditDb } from './src/services/emailAuditDb.js';
+import { processResendWebhook } from './src/services/webhookService.js';
+import { logger } from './src/utils/logger.js';
 
 const app = express();
 const PORT = 3000;

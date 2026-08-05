@@ -1,4 +1,4 @@
-import { ResendService } from './email/resendService';
+import { ResendService } from './email/resendService.js';
 import {
   SendEmailResult,
   WelcomeEmailOptions,
@@ -6,11 +6,11 @@ import {
   PasswordResetOptions,
   PasswordChangedOptions,
   SessionConfirmationOptions,
-} from './email/types';
+} from './email/types.js';
 
-export { resendClient as resend } from './email/resendService';
-export * from './email/types';
-export { ResendService } from './email/resendService';
+export { resendClient as resend } from './email/resendService.js';
+export * from './email/types.js';
+export { ResendService } from './email/resendService.js';
 
 /**
  * Função de retrocompatibilidade para o envio de e-mail de verificação

@@ -5,7 +5,7 @@ import {
   PasswordChangedOptions,
   SessionConfirmationOptions,
   RenderedEmailTemplate,
-} from './types';
+} from './types.js';
 
 const APP_URL = process.env.APP_URL || 'https://sessaocerta.shop';
 const LOGO_URL = `${APP_URL}/icon.png`;

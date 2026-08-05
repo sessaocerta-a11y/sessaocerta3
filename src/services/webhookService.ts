@@ -1,5 +1,5 @@
-import { emailAuditDb, EmailAuditRecord } from './emailAuditDb';
-import { logger } from '../utils/logger';
+import { emailAuditDb, EmailAuditRecord } from './emailAuditDb.js';
+import { logger } from '../utils/logger.js';
 
 export interface ResendWebhookPayload {
   created_at?: string;

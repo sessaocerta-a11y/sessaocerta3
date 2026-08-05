@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Resend } from 'resend';
-import { logger } from '../../utils/logger';
-import { emailAuditDb } from '../emailAuditDb';
+import { logger } from '../../utils/logger.js';
+import { emailAuditDb } from '../emailAuditDb.js';
 import {
   SendEmailResult,
   WelcomeEmailOptions,
@@ -9,14 +9,14 @@ import {
   PasswordResetOptions,
   PasswordChangedOptions,
   SessionConfirmationOptions,
-} from './types';
+} from './types.js';
 import {
   getWelcomeEmailTemplate,
   getVerificationEmailTemplate,
   getPasswordResetEmailTemplate,
   getPasswordChangedEmailTemplate,
   getSessionConfirmationEmailTemplate,
-} from './emailTemplates';
+} from './emailTemplates.js';
 
 /**
  * Helper para obter a instância do cliente Resend utilizando estritamente a variável de ambiente.
