@@ -426,6 +426,62 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
+  // API Route: Webhook oficial da Meta WhatsApp Cloud API (Validação de Webhook - GET)
+  app.get('/api/webhooks/whatsapp', (req, res) => {
+    try {
+      const mode = req.query['hub.mode'];
+      const token = req.query['hub.verify_token'];
+      const challenge = req.query['hub.challenge'];
+
+      const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'sessaocerta_whatsapp_verify_token';
+
+      logger.info('WHATSAPP', '[WhatsApp Webhook GET] Recebida solicitação de validação do webhook Meta', {
+        mode,
+        hasToken: !!token,
+        hasChallenge: !!challenge,
+      });
+
+      // Validação do token enviado pela Meta
+      if (mode === 'subscribe' && token === expectedToken) {
+        logger.info('WHATSAPP', '[WhatsApp Webhook GET] Token de verificação validado com sucesso!');
+        // Retornar o valor do hub.challenge em formato de texto puro conforme especificado pela Meta
+        return res.status(200).send(challenge);
+      }
+
+      logger.warn('WHATSAPP', '[WhatsApp Webhook GET] Falha na validação do token do WhatsApp', {
+        mode,
+        tokenReceived: token ? '***' : null,
+      });
+
+      return res.status(403).json({ error: 'Token de verificação do WhatsApp inválido ou não autorizado.' });
+    } catch (error: any) {
+      logger.error('WHATSAPP', 'Erro ao processar validação do webhook do WhatsApp', { error: error.message });
+      return res.status(500).json({ error: 'Erro interno ao validar webhook do WhatsApp', details: error.message });
+    }
+  });
+
+  // API Route: Webhook oficial da Meta WhatsApp Cloud API (Recepção de Eventos - POST)
+  app.post('/api/webhooks/whatsapp', (req, res) => {
+    try {
+      const payload = req.body;
+
+      logger.info('WHATSAPP', '[WhatsApp Webhook POST] Evento recebido da Meta WhatsApp Cloud API', {
+        object: payload?.object,
+        entriesCount: Array.isArray(payload?.entry) ? payload.entry.length : 0,
+      });
+
+      // Registrar o conteúdo detalhado recebido no console do servidor
+      console.log('[WhatsApp Cloud API Event received]:', JSON.stringify(payload, null, 2));
+
+      // Responder HTTP 200 OK para confirmar o recebimento à Meta
+      return res.status(200).send('EVENT_RECEIVED');
+    } catch (error: any) {
+      logger.error('WHATSAPP', 'Erro ao receber evento no webhook do WhatsApp', { error: error.message });
+      // Responder HTTP 200 para evitar retentativas excessivas da Meta
+      return res.status(200).send('EVENT_RECEIVED');
+    }
+  });
+
   // API Route: Consulta de Auditoria de E-mails Enviados
   app.get('/api/email-audit', (req, res) => {
     const limit = Number(req.query.limit) || 100;
