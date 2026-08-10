@@ -13,6 +13,7 @@ import {
 } from './src/services/emailService.js';
 import { emailAuditDb } from './src/services/emailAuditDb.js';
 import { processResendWebhook } from './src/services/webhookService.js';
+import { processWhatsAppWebhook } from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
 
 const app = express();
@@ -470,15 +471,20 @@ Pendentes: ${pendingCount || 0}`,
         entriesCount: Array.isArray(payload?.entry) ? payload.entry.length : 0,
       });
 
-      // Registrar o conteúdo detalhado recebido no console do servidor
-      console.log('[WhatsApp Cloud API Event received]:', JSON.stringify(payload, null, 2));
+      // Extrair, interpretar e registrar mensagens e status do payload
+      const processResult = processWhatsAppWebhook(payload);
 
-      // Responder HTTP 200 OK para confirmar o recebimento à Meta
-      return res.status(200).send('EVENT_RECEIVED');
+      logger.info('WHATSAPP', '[WhatsApp Webhook POST] Processamento concluído', {
+        messagesProcessed: processResult.messagesProcessed,
+        statusesProcessed: processResult.statusesProcessed
+      });
+
+      // Responder HTTP 200 OK com status EVENT_RECEIVED para confirmar o recebimento à Meta
+      return res.status(200).json({ status: 'EVENT_RECEIVED' });
     } catch (error: any) {
       logger.error('WHATSAPP', 'Erro ao receber evento no webhook do WhatsApp', { error: error.message });
-      // Responder HTTP 200 para evitar retentativas excessivas da Meta
-      return res.status(200).send('EVENT_RECEIVED');
+      // Responder HTTP 200 com status EVENT_RECEIVED para evitar retentativas excessivas da Meta
+      return res.status(200).json({ status: 'EVENT_RECEIVED' });
     }
   });
 
