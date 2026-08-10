@@ -237,35 +237,34 @@ export function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): WhatsAp
                 break;
             }
 
-            // Registro estruturado e formatado conforme especificação
+            // Registro estruturado e formatado conforme especificação de diagnóstico
             const logFormatted = `
-[WHATSAPP RECEBIDO]
-Remetente: ${formattedFrom}
+===== WHATSAPP RECEBIDO =====
+Remetente: ${rawFrom || 'Não informado'}
 Nome: ${senderName}
 Tipo: ${messageType}
 Mensagem: ${contentSummary}
 ID: ${messageId}
 Timestamp: ${formattedTime}
+=============================
 `.trim();
 
             // Imprimir no console oficial para visibilidade imediata nos logs da Vercel
             console.log(logFormatted);
 
-            // Log de auditoria da aplicação
-            logger.info('WHATSAPP', `[WHATSAPP RECEBIDO] Mensagem de ${formattedFrom} (${senderName})`, {
-              remetente: formattedFrom,
-              rawFrom,
+            // Log de auditoria da aplicação na categoria WHATSAPP
+            logger.info('WHATSAPP', logFormatted, {
+              remetente: rawFrom,
               nome: senderName,
               tipo: messageType,
               mensagem: contentSummary,
               id: messageId,
-              timestamp: formattedTime,
-              rawMsg: msg
+              timestamp: formattedTime
             });
 
             result.messageDetails.push({
               id: messageId,
-              from: formattedFrom,
+              from: rawFrom || formattedFrom,
               senderName,
               type: messageType,
               body: contentSummary,
@@ -281,23 +280,24 @@ Timestamp: ${formattedTime}
 
             const statusId = status.id || 'sem_id';
             const statusState = status.status || 'desconhecido';
-            const recipient = formatPhoneNumber(status.recipient_id);
+            const recipientId = status.recipient_id || formatPhoneNumber(status.recipient_id);
             const formattedTime = formatTimestamp(status.timestamp);
 
             const statusFormatted = `
-[WHATSAPP ATUALIZAÇÃO DE STATUS]
+===== WHATSAPP STATUS =====
 ID: ${statusId}
 Status: ${statusState}
-Destinatário: ${recipient}
+Destinatário: ${recipientId}
 Timestamp: ${formattedTime}
+============================
 `.trim();
 
             console.log(statusFormatted);
 
-            logger.info('WHATSAPP', `[WHATSAPP STATUS] Mensagem ${statusId} -> ${statusState}`, {
+            logger.info('WHATSAPP', statusFormatted, {
               statusId,
               status: statusState,
-              destinatario: recipient,
+              destinatario: recipientId,
               timestamp: formattedTime,
               errors: status.errors || null
             });
@@ -312,6 +312,11 @@ Timestamp: ${formattedTime}
         object: payload.object
       });
     }
+
+    // Log de conclusão de diagnóstico do payload
+    const processedMsg = '[WHATSAPP] Payload recebido e processado com sucesso.';
+    console.log(processedMsg);
+    logger.info('WHATSAPP', processedMsg);
 
   } catch (error: any) {
     logger.error('WHATSAPP', 'Erro ao processar conteúdo do webhook do WhatsApp', {
