@@ -104,6 +104,70 @@ export interface WhatsAppProcessResult {
   }>;
 }
 
+export interface SessionData {
+  sessionId: string;
+  patientPhone: string;
+  patientName: string;
+  psychologistName: string;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'cancelled' | 'reschedule_requested';
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SendConfirmationOptions {
+  toPhone: string;
+  patientName: string;
+  psychologistName?: string;
+  date: string;
+  time: string;
+  sessionId?: string;
+}
+
+// Armazenamento em memória para dados de sessões agendadas
+const sessionStoreById = new Map<string, SessionData>();
+const sessionStoreByPhone = new Map<string, SessionData>();
+
+// Conjunto para controle de idempotência de eventos já processados (message.id)
+const processedMessageIds = new Set<string>();
+
+/**
+ * Registra ou atualiza dados de sessão na memória do serviço
+ */
+export function registerSession(data: Omit<SessionData, 'status' | 'createdAt'> & { status?: SessionData['status'] }): SessionData {
+  const cleanPhone = data.patientPhone.replace(/\D/g, '');
+  const session: SessionData = {
+    sessionId: data.sessionId,
+    patientPhone: cleanPhone,
+    patientName: data.patientName,
+    psychologistName: data.psychologistName || 'Dra. Fernanda',
+    date: data.date,
+    time: data.time,
+    status: data.status || 'pending',
+    createdAt: new Date().toISOString()
+  };
+
+  sessionStoreById.set(session.sessionId, session);
+  sessionStoreByPhone.set(cleanPhone, session);
+  return session;
+}
+
+/**
+ * Consulta os dados de uma sessão por sessionId
+ */
+export function getSessionData(sessionId: string): SessionData | undefined {
+  return sessionStoreById.get(sessionId);
+}
+
+/**
+ * Consulta os dados de uma sessão pelo telefone do paciente
+ */
+export function getSessionDataByPhone(phone: string): SessionData | undefined {
+  const clean = phone.replace(/\D/g, '');
+  return sessionStoreByPhone.get(clean);
+}
+
 /**
  * Auxiliar para formatar número de telefone com o prefixo '+' se não contiver
  */
@@ -261,6 +325,169 @@ Erro: ${errorMessage}
 }
 
 /**
+ * Envia mensagem interativa de confirmação de sessão com três botões: Confirmar, Cancelar, Reagendar
+ */
+export async function sendWhatsAppConfirmationMessage(options: SendConfirmationOptions): Promise<{ success: boolean; sessionId: string }> {
+  const currentStage = 'envio_confirmacao_interativa';
+  const sessionId = options.sessionId || `sess_${Date.now()}`;
+  const psychologistName = options.psychologistName || 'Dra. Fernanda';
+
+  registerSession({
+    sessionId,
+    patientPhone: options.toPhone,
+    patientName: options.patientName,
+    psychologistName,
+    date: options.date,
+    time: options.time,
+    status: 'pending'
+  });
+
+  try {
+    const debugStart = '[WHATSAPP DEBUG] Iniciando envio da mensagem interativa de confirmação';
+    console.log(debugStart);
+    logger.info('WHATSAPP', debugStart);
+
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
+
+    const hasPhoneId = Boolean(phoneNumberId);
+    const hasToken = Boolean(accessToken);
+
+    const debugVars = `[WHATSAPP DEBUG] Variáveis de envio verificadas (PHONE_NUMBER_ID configurado: ${hasPhoneId}, ACCESS_TOKEN configurado: ${hasToken})`;
+    console.log(debugVars);
+    logger.info('WHATSAPP', debugVars, {
+      phoneNumberIdConfigured: hasPhoneId,
+      accessTokenConfigured: hasToken
+    });
+
+    const cleanRecipient = options.toPhone.replace(/\D/g, '');
+    const formattedRecipient = cleanRecipient.startsWith('+') ? cleanRecipient : `+${cleanRecipient}`;
+
+    if (!phoneNumberId || !accessToken) {
+      const errorDetails = 'Variáveis de ambiente WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_ACCESS_TOKEN / WHATSAPP_API_TOKEN não estão configuradas.';
+      const errorLog = `
+[WHATSAPP ENVIO ERRO]
+Destinatário: ${formattedRecipient}
+Erro: ${errorDetails}
+`.trim();
+      console.error(errorLog);
+      logger.error('WHATSAPP', errorLog, {
+        destinatario: formattedRecipient,
+        erro: errorDetails
+      });
+      return { success: false, sessionId };
+    }
+
+    const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+
+    const bodyText = `Olá, ${options.patientName}! 👋\n\nSua sessão com ${psychologistName} está agendada para:\n\n📅 ${options.date}\n⏰ ${options.time}\n\nPor favor, confirme sua sessão:`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: cleanRecipient,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: {
+          text: bodyText
+        },
+        action: {
+          buttons: [
+            {
+              type: 'reply',
+              reply: {
+                id: `confirm_session:${sessionId}`,
+                title: '✅ Confirmar'
+              }
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: `cancel_session:${sessionId}`,
+                title: '❌ Cancelar'
+              }
+            },
+            {
+              type: 'reply',
+              reply: {
+                id: `reschedule_session:${sessionId}`,
+                title: '🔄 Reagendar'
+              }
+            }
+          ]
+        }
+      }
+    };
+
+    const debugCall = '[WHATSAPP DEBUG] Chamando Meta Graph API (Mensagem Interativa)';
+    console.log(debugCall);
+    logger.info('WHATSAPP', debugCall, { recipient: cleanRecipient, sessionId });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json().catch(() => ({}));
+    const safeResponseData = JSON.parse(JSON.stringify(responseData));
+
+    const isSuccess = response.ok && !responseData.error;
+    const debugResp = `[WHATSAPP DEBUG] Resposta recebida da Meta Graph API (HTTP Status: ${response.status}, Sucesso: ${isSuccess})`;
+    console.log(debugResp);
+    logger.info('WHATSAPP', debugResp, {
+      status: response.status,
+      success: isSuccess,
+      responseBody: safeResponseData
+    });
+
+    if (isSuccess) {
+      const successLog = `
+[WHATSAPP ENVIO CONFIRMAÇÃO]
+Destinatário: ${formattedRecipient}
+Sessão ID: ${sessionId}
+Status: enviado
+`.trim();
+      console.log(successLog);
+      logger.info('WHATSAPP', successLog, {
+        destinatario: formattedRecipient,
+        sessionId,
+        status: 'enviado',
+        messageId: responseData?.messages?.[0]?.id
+      });
+      return { success: true, sessionId };
+    } else {
+      const errorMessage = responseData?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+      const errorLog = `
+[WHATSAPP ENVIO ERRO]
+Destinatário: ${formattedRecipient}
+Erro: ${errorMessage}
+`.trim();
+      console.error(errorLog);
+      logger.error('WHATSAPP', errorLog, {
+        destinatario: formattedRecipient,
+        erro: errorMessage,
+        code: responseData?.error?.code
+      });
+      return { success: false, sessionId };
+    }
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    const debugErrLog = `
+[WHATSAPP DEBUG ERROR]
+Etapa: ${currentStage}
+Erro: ${errorMessage}
+`.trim();
+    console.error(debugErrLog);
+    logger.error('WHATSAPP', debugErrLog, { error: errorMessage });
+    return { success: false, sessionId };
+  }
+}
+
+/**
  * Processa um evento recebido da Meta WhatsApp Cloud API
  */
 export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): Promise<WhatsAppProcessResult> {
@@ -372,6 +599,23 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
             const msg = value.messages![msgIdx];
             currentStage = `processando_mensagem_individual_${msgIdx}`;
 
+            const messageId = msg.id || 'sem_id';
+
+            // Verificação de idempotência para evitar duplicidade de processamento
+            if (messageId && messageId !== 'sem_id') {
+              if (processedMessageIds.has(messageId)) {
+                const dupMsg = '[WHATSAPP] Evento duplicado ignorado';
+                console.log(dupMsg);
+                logger.info('WHATSAPP', dupMsg, { messageId });
+                continue;
+              }
+              processedMessageIds.add(messageId);
+              if (processedMessageIds.size > 2000) {
+                const oldest = processedMessageIds.values().next().value;
+                if (oldest) processedMessageIds.delete(oldest);
+              }
+            }
+
             const debugMsgInd = `[WHATSAPP DEBUG] Processando mensagem individual (${msgIdx + 1}/${messagesCount})`;
             console.log(debugMsgInd);
             logger.info('WHATSAPP', debugMsgInd);
@@ -381,7 +625,6 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
             const rawFrom = msg.from || '';
             const formattedFrom = formatPhoneNumber(rawFrom);
             const senderName = contactsMap.get(rawFrom) || 'Nome não informado';
-            const messageId = msg.id || 'sem_id';
             const messageType = msg.type || 'unknown';
             const formattedTime = formatTimestamp(msg.timestamp);
 
@@ -488,6 +731,128 @@ Timestamp: ${formattedTime}
                 await sendWhatsAppTextMessage(rawFrom, autoReplyText);
               } else {
                 logger.warn('WHATSAPP', '[WHATSAPP DEBUG] Remetente (from) ausente; não foi possível enviar resposta automática.');
+              }
+            }
+
+            // Processamento de Mensagens Interativas (Respostas de Botões)
+            if (messageType === 'interactive' && msg.interactive?.type === 'button_reply') {
+              const btnReply = msg.interactive.button_reply;
+              const rawBtnId = btnReply?.id || '';
+              const btnTitle = btnReply?.title || '';
+
+              const debugIntId = '[WHATSAPP DEBUG] Mensagem interativa identificada';
+              console.log(debugIntId);
+              logger.info('WHATSAPP', debugIntId);
+
+              const debugBtnReply = '[WHATSAPP DEBUG] Button reply identificado';
+              console.log(debugBtnReply);
+              logger.info('WHATSAPP', debugBtnReply);
+
+              let actionKey = rawBtnId;
+              let targetSessionId = '';
+
+              if (rawBtnId.includes(':')) {
+                const parts = rawBtnId.split(':');
+                actionKey = parts[0];
+                targetSessionId = parts[1];
+              } else if (rawBtnId.startsWith('confirm_session')) {
+                actionKey = 'confirm_session';
+              } else if (rawBtnId.startsWith('cancel_session')) {
+                actionKey = 'cancel_session';
+              } else if (rawBtnId.startsWith('reschedule_session')) {
+                actionKey = 'reschedule_session';
+              }
+
+              const logInteractive = `
+[WHATSAPP INTERATIVO RECEBIDO]
+Remetente: ${formattedFrom}
+Nome: ${senderName}
+Ação: ${actionKey}
+Título: ${btnTitle}
+Message ID: ${messageId}
+Timestamp: ${formattedTime}
+`.trim();
+
+              console.log(logInteractive);
+              logger.info('WHATSAPP', logInteractive, {
+                remetente: formattedFrom,
+                nome: senderName,
+                acao: actionKey,
+                titulo: btnTitle,
+                messageId,
+                timestamp: formattedTime
+              });
+
+              const debugAction = `[WHATSAPP DEBUG] Ação recebida: ${actionKey}`;
+              console.log(debugAction);
+              logger.info('WHATSAPP', debugAction);
+
+              // Identificar sessão associada
+              let session = targetSessionId ? getSessionData(targetSessionId) : undefined;
+              if (!session && rawFrom) {
+                session = getSessionDataByPhone(rawFrom);
+              }
+
+              const foundSessionId = session?.sessionId || targetSessionId || 'sess_default';
+              const debugSession = `[WHATSAPP DEBUG] Sessão identificada: ${foundSessionId}`;
+              console.log(debugSession);
+              logger.info('WHATSAPP', debugSession);
+
+              try {
+                const dateStr = session?.date || 'no dia agendado';
+                const timeStr = session?.time || 'no horário combinado';
+
+                const debugStatus = '[WHATSAPP DEBUG] Atualizando status da sessão';
+                console.log(debugStatus);
+                logger.info('WHATSAPP', debugStatus);
+
+                let replyMsg = '';
+
+                if (actionKey === 'confirm_session') {
+                  if (session) {
+                    session.status = 'confirmed';
+                    session.updatedAt = new Date().toISOString();
+                  }
+                  replyMsg = `✅ Sessão confirmada!\n\nSua sessão está confirmada para ${dateStr} às ${timeStr}.\n\nAté lá! 😊`;
+                } else if (actionKey === 'cancel_session') {
+                  if (session) {
+                    session.status = 'cancelled';
+                    session.updatedAt = new Date().toISOString();
+                  }
+                  replyMsg = `❌ Sessão cancelada.\n\nA sessão de ${dateStr} às ${timeStr} foi cancelada com sucesso.\n\nSe precisar agendar novamente, estamos à disposição.`;
+                } else if (actionKey === 'reschedule_session') {
+                  if (session) {
+                    session.status = 'reschedule_requested';
+                    session.updatedAt = new Date().toISOString();
+                  }
+                  replyMsg = `🔄 Claro!\n\nVamos reagendar sua sessão.\n\nEm breve você poderá escolher um novo horário disponível.`;
+                } else {
+                  replyMsg = `Recebemos sua escolha ("${btnTitle}"). Obrigado!`;
+                }
+
+                if (rawFrom && replyMsg) {
+                  const debugSending = '[WHATSAPP DEBUG] Enviando resposta da ação';
+                  console.log(debugSending);
+                  logger.info('WHATSAPP', debugSending);
+
+                  const sent = await sendWhatsAppTextMessage(rawFrom, replyMsg);
+
+                  if (sent) {
+                    const debugSuccess = '[WHATSAPP DEBUG] Resposta enviada com sucesso';
+                    console.log(debugSuccess);
+                    logger.info('WHATSAPP', debugSuccess);
+                  }
+                }
+              } catch (intErr: any) {
+                const errorMessage = intErr?.message || String(intErr);
+                const debugErrLog = `
+[WHATSAPP INTERACTIVE ERROR]
+Ação: ${actionKey}
+Sessão: ${foundSessionId}
+Erro: ${errorMessage}
+`.trim();
+                console.error(debugErrLog);
+                logger.error('WHATSAPP', debugErrLog, { error: errorMessage });
               }
             }
           }

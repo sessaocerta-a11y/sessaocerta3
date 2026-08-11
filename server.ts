@@ -13,7 +13,12 @@ import {
 } from './src/services/emailService.js';
 import { emailAuditDb } from './src/services/emailAuditDb.js';
 import { processResendWebhook } from './src/services/webhookService.js';
-import { processWhatsAppWebhook } from './src/services/whatsappWebhookService.js';
+import {
+  processWhatsAppWebhook,
+  sendWhatsAppConfirmationMessage,
+  getSessionData,
+  getSessionDataByPhone
+} from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
 
 const app = express();
@@ -372,6 +377,59 @@ Pendentes: ${pendingCount || 0}`,
       logger.error('SESSIONS', 'Erro na rota de confirmação de consulta por e-mail', { error: error.message });
       res.status(500).json({ error: 'Erro ao enviar e-mail de confirmação de consulta', details: error.message });
     }
+  });
+
+  // API Route: Envio de Confirmação de Consulta via WhatsApp (Mensagem Interativa com Botões)
+  app.post('/api/sessions/send-whatsapp-confirmation', async (req, res) => {
+    try {
+      const { to, patientName, psychologistName, date, time, sessionId } = req.body;
+
+      if (!to || !patientName || !date || !time) {
+        return res.status(400).json({ error: 'Campos obrigatórios ausentes (to, patientName, date, time).' });
+      }
+
+      const result = await sendWhatsAppConfirmationMessage({
+        toPhone: to,
+        patientName,
+        psychologistName: psychologistName || 'Dra. Fernanda',
+        date,
+        time,
+        sessionId
+      });
+
+      if (result.success) {
+        logger.audit('SESSIONS', `Mensagem WhatsApp interativa enviada para ${to}`, { date, time, sessionId: result.sessionId });
+      }
+
+      return res.json({
+        success: result.success,
+        sessionId: result.sessionId,
+        message: result.success
+          ? `Mensagem interativa enviada via WhatsApp para ${to}`
+          : 'Falha ao enviar mensagem interativa WhatsApp'
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', 'Erro na rota de confirmação por WhatsApp', { error: error.message });
+      res.status(500).json({ error: 'Erro ao enviar confirmação por WhatsApp', details: error.message });
+    }
+  });
+
+  // API Route: Consulta do status de uma sessão
+  app.get('/api/sessions/status', (req, res) => {
+    const { sessionId, phone } = req.query;
+    let session = null;
+
+    if (sessionId) {
+      session = getSessionData(String(sessionId));
+    } else if (phone) {
+      session = getSessionDataByPhone(String(phone));
+    }
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Sessão não encontrada' });
+    }
+
+    return res.json({ success: true, session });
   });
 
   // API Route: Registrador e Consulta do Sistema de Logs Centralizado
