@@ -183,6 +183,26 @@ CREATE TABLE settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 10. TABELA WHATSAPP_SESSIONS (Sessões e confirmações via WhatsApp)
+CREATE TABLE whatsapp_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id TEXT UNIQUE NOT NULL,
+  patient_phone TEXT NOT NULL,
+  patient_name TEXT NOT NULL,
+  psychologist_name TEXT DEFAULT 'Dra. Fernanda',
+  session_date TEXT NOT NULL,
+  session_time TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'scheduled', -- 'scheduled', 'confirmed', 'cancelled', 'reschedule_requested'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. TABELA WHATSAPP_PROCESSED_MESSAGES (Idempotência de Webhook por message.id / wamid)
+CREATE TABLE whatsapp_processed_messages (
+  message_id TEXT PRIMARY KEY,
+  processed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ÍNDICES PARA ALTA PERFORMANCE
 CREATE INDEX idx_patients_user_id ON patients(user_id);
 CREATE INDEX idx_patients_nome ON patients(nome);
@@ -192,6 +212,8 @@ CREATE INDEX idx_appointments_data ON appointments(data);
 CREATE INDEX idx_appointments_status ON appointments(status);
 CREATE INDEX idx_appointments_tokens ON appointments(token_confirmacao, token_reagendamento);
 CREATE INDEX idx_reminders_status_scheduled ON reminders(status, scheduled_at);
+CREATE INDEX idx_whatsapp_sessions_phone ON whatsapp_sessions(patient_phone);
+CREATE INDEX idx_whatsapp_sessions_session_id ON whatsapp_sessions(session_id);
 
 -- ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;

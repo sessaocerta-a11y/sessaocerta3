@@ -415,14 +415,14 @@ Pendentes: ${pendingCount || 0}`,
   });
 
   // API Route: Consulta do status de uma sessão
-  app.get('/api/sessions/status', (req, res) => {
+  app.get('/api/sessions/status', async (req, res) => {
     const { sessionId, phone } = req.query;
     let session = null;
 
     if (sessionId) {
-      session = getSessionData(String(sessionId));
+      session = await getSessionData(String(sessionId));
     } else if (phone) {
-      session = getSessionDataByPhone(String(phone));
+      session = await getSessionDataByPhone(String(phone));
     }
 
     if (!session) {

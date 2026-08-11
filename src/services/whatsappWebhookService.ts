@@ -104,6 +104,12 @@ export interface WhatsAppProcessResult {
   }>;
 }
 
+import {
+  whatsappDbService,
+  WhatsAppSessionStatus,
+  WhatsAppSessionRecord
+} from './whatsappDbService.js';
+
 export interface SessionData {
   sessionId: string;
   patientPhone: string;
@@ -111,7 +117,7 @@ export interface SessionData {
   psychologistName: string;
   date: string;
   time: string;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'reschedule_requested';
+  status: WhatsAppSessionStatus | 'pending';
   createdAt: string;
   updatedAt?: string;
 }
@@ -125,47 +131,69 @@ export interface SendConfirmationOptions {
   sessionId?: string;
 }
 
-// Armazenamento em memória para dados de sessões agendadas
-const sessionStoreById = new Map<string, SessionData>();
-const sessionStoreByPhone = new Map<string, SessionData>();
-
-// Conjunto para controle de idempotência de eventos já processados (message.id)
-const processedMessageIds = new Set<string>();
-
 /**
- * Registra ou atualiza dados de sessão na memória do serviço
- */
-export function registerSession(data: Omit<SessionData, 'status' | 'createdAt'> & { status?: SessionData['status'] }): SessionData {
-  const cleanPhone = data.patientPhone.replace(/\D/g, '');
-  const session: SessionData = {
+  * Registra ou atualiza dados de sessão no armazenamento persistente
+  */
+export async function registerSession(data: Omit<SessionData, 'createdAt'> & { status?: SessionData['status'] }): Promise<SessionData> {
+  const record = await whatsappDbService.registerSession({
     sessionId: data.sessionId,
-    patientPhone: cleanPhone,
+    patientPhone: data.patientPhone,
     patientName: data.patientName,
-    psychologistName: data.psychologistName || 'Dra. Fernanda',
+    psychologistName: data.psychologistName,
     date: data.date,
     time: data.time,
-    status: data.status || 'pending',
-    createdAt: new Date().toISOString()
+    status: data.status === 'pending' ? 'scheduled' : (data.status as WhatsAppSessionStatus)
+  });
+
+  return {
+    sessionId: record.session_id,
+    patientPhone: record.patient_phone,
+    patientName: record.patient_name,
+    psychologistName: record.psychologist_name,
+    date: record.session_date,
+    time: record.session_time,
+    status: record.status,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at
   };
-
-  sessionStoreById.set(session.sessionId, session);
-  sessionStoreByPhone.set(cleanPhone, session);
-  return session;
 }
 
 /**
- * Consulta os dados de uma sessão por sessionId
- */
-export function getSessionData(sessionId: string): SessionData | undefined {
-  return sessionStoreById.get(sessionId);
+  * Consulta os dados de uma sessão por sessionId no armazenamento persistente
+  */
+export async function getSessionData(sessionId: string): Promise<SessionData | undefined> {
+  const record = await whatsappDbService.getSessionData(sessionId);
+  if (!record) return undefined;
+  return {
+    sessionId: record.session_id,
+    patientPhone: record.patient_phone,
+    patientName: record.patient_name,
+    psychologistName: record.psychologist_name,
+    date: record.session_date,
+    time: record.session_time,
+    status: record.status,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at
+  };
 }
 
 /**
- * Consulta os dados de uma sessão pelo telefone do paciente
- */
-export function getSessionDataByPhone(phone: string): SessionData | undefined {
-  const clean = phone.replace(/\D/g, '');
-  return sessionStoreByPhone.get(clean);
+  * Consulta os dados de uma sessão pelo telefone do paciente no armazenamento persistente
+  */
+export async function getSessionDataByPhone(phone: string): Promise<SessionData | undefined> {
+  const record = await whatsappDbService.getSessionDataByPhone(phone);
+  if (!record) return undefined;
+  return {
+    sessionId: record.session_id,
+    patientPhone: record.patient_phone,
+    patientName: record.patient_name,
+    psychologistName: record.psychologist_name,
+    date: record.session_date,
+    time: record.session_time,
+    status: record.status,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at
+  };
 }
 
 /**
@@ -332,14 +360,14 @@ export async function sendWhatsAppConfirmationMessage(options: SendConfirmationO
   const sessionId = options.sessionId || `sess_${Date.now()}`;
   const psychologistName = options.psychologistName || 'Dra. Fernanda';
 
-  registerSession({
+  await registerSession({
     sessionId,
     patientPhone: options.toPhone,
     patientName: options.patientName,
     psychologistName,
     date: options.date,
     time: options.time,
-    status: 'pending'
+    status: 'scheduled'
   });
 
   try {
@@ -601,19 +629,16 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
 
             const messageId = msg.id || 'sem_id';
 
-            // Verificação de idempotência para evitar duplicidade de processamento
+            // Verificação de idempotência no armazenamento persistente para evitar duplicidade
             if (messageId && messageId !== 'sem_id') {
-              if (processedMessageIds.has(messageId)) {
+              const alreadyProcessed = await whatsappDbService.isMessageProcessed(messageId);
+              if (alreadyProcessed) {
                 const dupMsg = '[WHATSAPP] Evento duplicado ignorado';
                 console.log(dupMsg);
                 logger.info('WHATSAPP', dupMsg, { messageId });
                 continue;
               }
-              processedMessageIds.add(messageId);
-              if (processedMessageIds.size > 2000) {
-                const oldest = processedMessageIds.values().next().value;
-                if (oldest) processedMessageIds.delete(oldest);
-              }
+              await whatsappDbService.recordProcessedMessage(messageId);
             }
 
             const debugMsgInd = `[WHATSAPP DEBUG] Processando mensagem individual (${msgIdx + 1}/${messagesCount})`;
@@ -787,10 +812,10 @@ Timestamp: ${formattedTime}
               console.log(debugAction);
               logger.info('WHATSAPP', debugAction);
 
-              // Identificar sessão associada
-              let session = targetSessionId ? getSessionData(targetSessionId) : undefined;
+              // Identificar sessão associada no armazenamento persistente
+              let session = targetSessionId ? await getSessionData(targetSessionId) : undefined;
               if (!session && rawFrom) {
-                session = getSessionDataByPhone(rawFrom);
+                session = await getSessionDataByPhone(rawFrom);
               }
 
               const foundSessionId = session?.sessionId || targetSessionId || 'sess_default';
@@ -807,27 +832,23 @@ Timestamp: ${formattedTime}
                 logger.info('WHATSAPP', debugStatus);
 
                 let replyMsg = '';
+                let newStatus: WhatsAppSessionStatus | null = null;
 
                 if (actionKey === 'confirm_session') {
-                  if (session) {
-                    session.status = 'confirmed';
-                    session.updatedAt = new Date().toISOString();
-                  }
+                  newStatus = 'confirmed';
                   replyMsg = `✅ Sessão confirmada!\n\nSua sessão está confirmada para ${dateStr} às ${timeStr}.\n\nAté lá! 😊`;
                 } else if (actionKey === 'cancel_session') {
-                  if (session) {
-                    session.status = 'cancelled';
-                    session.updatedAt = new Date().toISOString();
-                  }
+                  newStatus = 'cancelled';
                   replyMsg = `❌ Sessão cancelada.\n\nA sessão de ${dateStr} às ${timeStr} foi cancelada com sucesso.\n\nSe precisar agendar novamente, estamos à disposição.`;
                 } else if (actionKey === 'reschedule_session') {
-                  if (session) {
-                    session.status = 'reschedule_requested';
-                    session.updatedAt = new Date().toISOString();
-                  }
+                  newStatus = 'reschedule_requested';
                   replyMsg = `🔄 Claro!\n\nVamos reagendar sua sessão.\n\nEm breve você poderá escolher um novo horário disponível.`;
                 } else {
                   replyMsg = `Recebemos sua escolha ("${btnTitle}"). Obrigado!`;
+                }
+
+                if (newStatus && foundSessionId) {
+                  await whatsappDbService.updateSessionStatus(foundSessionId, newStatus);
                 }
 
                 if (rawFrom && replyMsg) {
