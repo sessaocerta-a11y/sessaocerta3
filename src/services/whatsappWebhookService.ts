@@ -129,9 +129,102 @@ function formatTimestamp(ts?: string | number): string {
 }
 
 /**
+ * Envia uma mensagem de texto via WhatsApp Cloud API oficial da Meta
+ */
+export async function sendWhatsAppTextMessage(toPhone: string, textBody: string): Promise<boolean> {
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
+
+  const cleanRecipient = toPhone.replace(/\D/g, '');
+  const formattedRecipient = cleanRecipient.startsWith('+') ? cleanRecipient : `+${cleanRecipient}`;
+
+  if (!phoneNumberId || !accessToken) {
+    const errorDetails = 'Variáveis de ambiente WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_ACCESS_TOKEN / WHATSAPP_API_TOKEN não estão configuradas.';
+    const errorLog = `
+[WHATSAPP ENVIO ERRO]
+Destinatário: ${formattedRecipient}
+Erro: ${errorDetails}
+`.trim();
+    console.error(errorLog);
+    logger.error('WHATSAPP', errorLog, {
+      destinatario: formattedRecipient,
+      erro: errorDetails
+    });
+    return false;
+  }
+
+  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: cleanRecipient,
+    type: 'text',
+    text: {
+      body: textBody
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json().catch(() => ({}));
+
+    if (response.ok && !responseData.error) {
+      const successLog = `
+[WHATSAPP ENVIO]
+Destinatário: ${formattedRecipient}
+Mensagem: ${textBody}
+Status: enviado
+`.trim();
+      console.log(successLog);
+      logger.info('WHATSAPP', successLog, {
+        destinatario: formattedRecipient,
+        status: 'enviado',
+        messageId: responseData?.messages?.[0]?.id
+      });
+      return true;
+    } else {
+      const errorMessage = responseData?.error?.message || `HTTP ${response.status} ${response.statusText}`;
+      const errorLog = `
+[WHATSAPP ENVIO ERRO]
+Destinatário: ${formattedRecipient}
+Erro: ${errorMessage}
+`.trim();
+      console.error(errorLog);
+      logger.error('WHATSAPP', errorLog, {
+        destinatario: formattedRecipient,
+        erro: errorMessage,
+        code: responseData?.error?.code
+      });
+      return false;
+    }
+  } catch (err: any) {
+    const errorMessage = err?.message || String(err);
+    const errorLog = `
+[WHATSAPP ENVIO ERRO]
+Destinatário: ${formattedRecipient}
+Erro: ${errorMessage}
+`.trim();
+    console.error(errorLog);
+    logger.error('WHATSAPP', errorLog, {
+      destinatario: formattedRecipient,
+      erro: errorMessage
+    });
+    return false;
+  }
+}
+
+/**
  * Processa um evento recebido da Meta WhatsApp Cloud API
  */
-export function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): WhatsAppProcessResult {
+export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): Promise<WhatsAppProcessResult> {
   const result: WhatsAppProcessResult = {
     success: true,
     messagesProcessed: 0,
@@ -270,6 +363,12 @@ Timestamp: ${formattedTime}
               body: contentSummary,
               timestamp: formattedTime
             });
+
+            // Resposta automática EXCLUSIVAMENTE para mensagens de texto recebidas
+            if (messageType === 'text' && rawFrom) {
+              const autoReplyText = "Olá, Breno! 👋\nRecebi sua mensagem. O Sessão Certa está funcionando!";
+              await sendWhatsAppTextMessage(rawFrom, autoReplyText);
+            }
           }
         }
 

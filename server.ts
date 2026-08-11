@@ -462,7 +462,7 @@ Pendentes: ${pendingCount || 0}`,
   });
 
   // API Route: Webhook oficial da Meta WhatsApp Cloud API (Recepção de Eventos - POST)
-  app.post('/api/webhooks/whatsapp', (req, res) => {
+  app.post('/api/webhooks/whatsapp', async (req, res) => {
     try {
       const payload = req.body;
 
@@ -471,8 +471,8 @@ Pendentes: ${pendingCount || 0}`,
         entriesCount: Array.isArray(payload?.entry) ? payload.entry.length : 0,
       });
 
-      // Extrair, interpretar e registrar mensagens e status do payload
-      const processResult = processWhatsAppWebhook(payload);
+      // Extrair, interpretar, registrar mensagens e enviar resposta automática quando aplicável
+      const processResult = await processWhatsAppWebhook(payload);
 
       logger.info('WHATSAPP', '[WhatsApp Webhook POST] Processamento concluído', {
         messagesProcessed: processResult.messagesProcessed,
