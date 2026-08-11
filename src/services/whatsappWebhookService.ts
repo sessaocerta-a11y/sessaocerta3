@@ -132,39 +132,58 @@ function formatTimestamp(ts?: string | number): string {
  * Envia uma mensagem de texto via WhatsApp Cloud API oficial da Meta
  */
 export async function sendWhatsAppTextMessage(toPhone: string, textBody: string): Promise<boolean> {
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
+  const currentStage = 'envio_resposta_automatica';
+  try {
+    const debugStart = '[WHATSAPP DEBUG] Iniciando envio da resposta automática';
+    console.log(debugStart);
+    logger.info('WHATSAPP', debugStart);
 
-  const cleanRecipient = toPhone.replace(/\D/g, '');
-  const formattedRecipient = cleanRecipient.startsWith('+') ? cleanRecipient : `+${cleanRecipient}`;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
 
-  if (!phoneNumberId || !accessToken) {
-    const errorDetails = 'Variáveis de ambiente WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_ACCESS_TOKEN / WHATSAPP_API_TOKEN não estão configuradas.';
-    const errorLog = `
+    const hasPhoneId = Boolean(phoneNumberId);
+    const hasToken = Boolean(accessToken);
+
+    const debugVars = `[WHATSAPP DEBUG] Variáveis de envio verificadas (PHONE_NUMBER_ID configurado: ${hasPhoneId}, ACCESS_TOKEN configurado: ${hasToken})`;
+    console.log(debugVars);
+    logger.info('WHATSAPP', debugVars, {
+      phoneNumberIdConfigured: hasPhoneId,
+      accessTokenConfigured: hasToken
+    });
+
+    const cleanRecipient = toPhone.replace(/\D/g, '');
+    const formattedRecipient = cleanRecipient.startsWith('+') ? cleanRecipient : `+${cleanRecipient}`;
+
+    if (!phoneNumberId || !accessToken) {
+      const errorDetails = 'Variáveis de ambiente WHATSAPP_PHONE_NUMBER_ID ou WHATSAPP_ACCESS_TOKEN / WHATSAPP_API_TOKEN não estão configuradas.';
+      const errorLog = `
 [WHATSAPP ENVIO ERRO]
 Destinatário: ${formattedRecipient}
 Erro: ${errorDetails}
 `.trim();
-    console.error(errorLog);
-    logger.error('WHATSAPP', errorLog, {
-      destinatario: formattedRecipient,
-      erro: errorDetails
-    });
-    return false;
-  }
-
-  const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
-
-  const payload = {
-    messaging_product: 'whatsapp',
-    to: cleanRecipient,
-    type: 'text',
-    text: {
-      body: textBody
+      console.error(errorLog);
+      logger.error('WHATSAPP', errorLog, {
+        destinatario: formattedRecipient,
+        erro: errorDetails
+      });
+      return false;
     }
-  };
 
-  try {
+    const url = `https://graph.facebook.com/v19.0/${phoneNumberId}/messages`;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: cleanRecipient,
+      type: 'text',
+      text: {
+        body: textBody
+      }
+    };
+
+    const debugCall = '[WHATSAPP DEBUG] Chamando Meta Graph API';
+    console.log(debugCall);
+    logger.info('WHATSAPP', debugCall, { recipient: cleanRecipient });
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -176,7 +195,19 @@ Erro: ${errorDetails}
 
     const responseData = await response.json().catch(() => ({}));
 
-    if (response.ok && !responseData.error) {
+    // Copia segura da resposta sem expor tokens ou segredos
+    const safeResponseData = JSON.parse(JSON.stringify(responseData));
+
+    const isSuccess = response.ok && !responseData.error;
+    const debugResp = `[WHATSAPP DEBUG] Resposta recebida da Meta Graph API (HTTP Status: ${response.status}, Sucesso: ${isSuccess})`;
+    console.log(debugResp);
+    logger.info('WHATSAPP', debugResp, {
+      status: response.status,
+      success: isSuccess,
+      responseBody: safeResponseData
+    });
+
+    if (isSuccess) {
       const successLog = `
 [WHATSAPP ENVIO]
 Destinatário: ${formattedRecipient}
@@ -207,14 +238,22 @@ Erro: ${errorMessage}
     }
   } catch (err: any) {
     const errorMessage = err?.message || String(err);
+    const debugErrLog = `
+[WHATSAPP DEBUG ERROR]
+Etapa: ${currentStage}
+Erro: ${errorMessage}
+`.trim();
+    console.error(debugErrLog);
+    logger.error('WHATSAPP', debugErrLog, { error: errorMessage });
+
     const errorLog = `
 [WHATSAPP ENVIO ERRO]
-Destinatário: ${formattedRecipient}
+Destinatário: ${toPhone}
 Erro: ${errorMessage}
 `.trim();
     console.error(errorLog);
     logger.error('WHATSAPP', errorLog, {
-      destinatario: formattedRecipient,
+      destinatario: toPhone,
       erro: errorMessage
     });
     return false;
@@ -225,6 +264,8 @@ Erro: ${errorMessage}
  * Processa um evento recebido da Meta WhatsApp Cloud API
  */
 export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): Promise<WhatsAppProcessResult> {
+  let currentStage = 'iniciando_processamento_payload';
+
   const result: WhatsAppProcessResult = {
     success: true,
     messagesProcessed: 0,
@@ -233,6 +274,10 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
   };
 
   try {
+    const debugStart = '[WHATSAPP DEBUG] Iniciando processamento do payload';
+    console.log(debugStart);
+    logger.info('WHATSAPP', debugStart);
+
     if (!payload || typeof payload !== 'object') {
       logger.warn('WHATSAPP', '[WhatsApp Webhook] Payload inválido ou vazio recebido');
       return result;
@@ -244,6 +289,7 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
       return result;
     }
 
+    currentStage = 'verificando_entries';
     const entries = Array.isArray(payload.entry) ? payload.entry : [];
 
     if (entries.length === 0) {
@@ -251,17 +297,63 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
       return result;
     }
 
-    for (const entry of entries) {
+    for (let entryIdx = 0; entryIdx < entries.length; entryIdx++) {
+      const entry = entries[entryIdx];
+      currentStage = `processando_entry_${entryIdx}`;
+
+      const debugEntry = `[WHATSAPP DEBUG] Entry encontrado (${entryIdx + 1}/${entries.length})`;
+      console.log(debugEntry);
+      logger.info('WHATSAPP', debugEntry);
+
       const changes = Array.isArray(entry?.changes) ? entry.changes : [];
 
-      for (const change of changes) {
+      if (changes.length === 0) {
+        logger.info('WHATSAPP', `[WhatsApp Webhook] Entry ${entryIdx} não possui mudanças (changes)`);
+        continue;
+      }
+
+      for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+        const change = changes[changeIdx];
+        currentStage = `processando_change_${entryIdx}_${changeIdx}`;
+
+        const debugChange = `[WHATSAPP DEBUG] Change encontrado (${changeIdx + 1}/${changes.length}, field: ${change?.field || 'desconhecido'})`;
+        console.log(debugChange);
+        logger.info('WHATSAPP', debugChange);
+
         const value = change?.value;
-        if (!value) continue;
+        if (!value) {
+          logger.info('WHATSAPP', `[WhatsApp Webhook] Change ${changeIdx} sem objeto value`);
+          continue;
+        }
+
+        currentStage = `processando_value_${entryIdx}_${changeIdx}`;
+        const debugValue = '[WHATSAPP DEBUG] Value encontrado';
+        console.log(debugValue);
+        logger.info('WHATSAPP', debugValue);
+
+        // Informações estruturais e seguras do value
+        const hasMessages = Array.isArray(value.messages);
+        const messagesCount = hasMessages ? value.messages!.length : 0;
+        const hasContacts = Array.isArray(value.contacts);
+        const contactsCount = hasContacts ? value.contacts!.length : 0;
+        const hasStatuses = Array.isArray(value.statuses);
+        const statusesCount = hasStatuses ? value.statuses!.length : 0;
+
+        const debugValueContent = `[WHATSAPP DEBUG] Conteúdo do value (messages existe: ${hasMessages}, quantidade: ${messagesCount}; contacts existe: ${hasContacts}, quantidade: ${contactsCount}; statuses existe: ${hasStatuses}, quantidade: ${statusesCount})`;
+        console.log(debugValueContent);
+        logger.info('WHATSAPP', debugValueContent, {
+          hasMessages,
+          messagesCount,
+          hasContacts,
+          contactsCount,
+          hasStatuses,
+          statusesCount
+        });
 
         // 1. Mapeamento de Contatos (Nome e ID)
         const contactsMap = new Map<string, string>();
-        if (Array.isArray(value.contacts)) {
-          for (const contact of value.contacts) {
+        if (hasContacts) {
+          for (const contact of value.contacts!) {
             if (contact?.wa_id) {
               const name = contact.profile?.name || 'Não informado';
               contactsMap.set(contact.wa_id, name);
@@ -270,8 +362,20 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
         }
 
         // 2. Processamento de Mensagens Recebidas de Usuários
-        if (Array.isArray(value.messages) && value.messages.length > 0) {
-          for (const msg of value.messages) {
+        if (hasMessages && messagesCount > 0) {
+          currentStage = 'processando_messages';
+          const debugMsgsFound = `[WHATSAPP DEBUG] Messages encontrados (${messagesCount} mensagem(ns))`;
+          console.log(debugMsgsFound);
+          logger.info('WHATSAPP', debugMsgsFound);
+
+          for (let msgIdx = 0; msgIdx < value.messages!.length; msgIdx++) {
+            const msg = value.messages![msgIdx];
+            currentStage = `processando_mensagem_individual_${msgIdx}`;
+
+            const debugMsgInd = `[WHATSAPP DEBUG] Processando mensagem individual (${msgIdx + 1}/${messagesCount})`;
+            console.log(debugMsgInd);
+            logger.info('WHATSAPP', debugMsgInd);
+
             result.messagesProcessed++;
 
             const rawFrom = msg.from || '';
@@ -280,6 +384,14 @@ export async function processWhatsAppWebhook(payload: WhatsAppWebhookPayload): P
             const messageId = msg.id || 'sem_id';
             const messageType = msg.type || 'unknown';
             const formattedTime = formatTimestamp(msg.timestamp);
+
+            const debugType = `[WHATSAPP DEBUG] Tipo da mensagem: ${messageType}`;
+            console.log(debugType);
+            logger.info('WHATSAPP', debugType);
+
+            const debugFrom = `[WHATSAPP DEBUG] Remetente identificado: ${rawFrom || 'Não informado'}`;
+            console.log(debugFrom);
+            logger.info('WHATSAPP', debugFrom);
 
             let contentSummary = '';
 
@@ -365,16 +477,26 @@ Timestamp: ${formattedTime}
             });
 
             // Resposta automática EXCLUSIVAMENTE para mensagens de texto recebidas
-            if (messageType === 'text' && rawFrom) {
-              const autoReplyText = "Olá, Breno! 👋\nRecebi sua mensagem. O Sessão Certa está funcionando!";
-              await sendWhatsAppTextMessage(rawFrom, autoReplyText);
+            if (messageType === 'text') {
+              const debugTxtId = '[WHATSAPP DEBUG] Mensagem de texto identificada';
+              console.log(debugTxtId);
+              logger.info('WHATSAPP', debugTxtId);
+
+              if (rawFrom) {
+                currentStage = 'enviando_resposta_automatica';
+                const autoReplyText = "Olá, Breno! 👋\nRecebi sua mensagem. O Sessão Certa está funcionando!";
+                await sendWhatsAppTextMessage(rawFrom, autoReplyText);
+              } else {
+                logger.warn('WHATSAPP', '[WHATSAPP DEBUG] Remetente (from) ausente; não foi possível enviar resposta automática.');
+              }
             }
           }
         }
 
         // 3. Processamento de Atualizações de Status de Mensagens Enviadas (Sent/Delivered/Read/Failed)
-        if (Array.isArray(value.statuses) && value.statuses.length > 0) {
-          for (const status of value.statuses) {
+        if (hasStatuses && statusesCount > 0) {
+          currentStage = 'processando_statuses';
+          for (const status of value.statuses!) {
             result.statusesProcessed++;
 
             const statusId = status.id || 'sem_id';
@@ -405,6 +527,8 @@ Timestamp: ${formattedTime}
       }
     }
 
+    currentStage = 'finalizacao_processamento';
+
     // Se o evento for um teste sem mensagens ou status
     if (result.messagesProcessed === 0 && result.statusesProcessed === 0) {
       logger.info('WHATSAPP', '[WhatsApp Webhook] Evento de teste ou notificação recebida sem mensagens/status', {
@@ -412,14 +536,26 @@ Timestamp: ${formattedTime}
       });
     }
 
-    // Log de conclusão de diagnóstico do payload
+    // Logs de conclusão de diagnóstico do payload
+    const debugFinish = '[WHATSAPP DEBUG] Processamento finalizado';
+    console.log(debugFinish);
+    logger.info('WHATSAPP', debugFinish);
+
     const processedMsg = '[WHATSAPP] Payload recebido e processado com sucesso.';
     console.log(processedMsg);
     logger.info('WHATSAPP', processedMsg);
 
   } catch (error: any) {
-    logger.error('WHATSAPP', 'Erro ao processar conteúdo do webhook do WhatsApp', {
-      error: error?.message || String(error),
+    const errorMessage = error?.message || String(error);
+    const debugErrLog = `
+[WHATSAPP DEBUG ERROR]
+Etapa: ${currentStage}
+Erro: ${errorMessage}
+`.trim();
+    console.error(debugErrLog);
+    logger.error('WHATSAPP', debugErrLog, {
+      etapa: currentStage,
+      error: errorMessage,
       stack: error?.stack
     });
   }
