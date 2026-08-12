@@ -20,6 +20,7 @@ import {
   getSessionDataByPhone
 } from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
+import { whatsappDbService } from './src/services/whatsappDbService.js';
 
 const app = express();
 const PORT = 3000;
@@ -430,6 +431,100 @@ Pendentes: ${pendingCount || 0}`,
     }
 
     return res.json({ success: true, session });
+  });
+
+  // API Route TEMPORÁRIA: Teste de Conexão e Persistência no Supabase
+  app.post('/api/test/whatsapp-db', async (_req, res) => {
+    try {
+      console.log('[WHATSAPP DB TEST] Iniciando teste');
+      logger.info('WHATSAPP', '[WHATSAPP DB TEST] Iniciando teste');
+
+      const isSupabaseConfigured = Boolean((whatsappDbService as any).supabase);
+
+      const testInput = {
+        sessionId: 'TESTE_SUPABASE_001',
+        patientPhone: '5511999999999',
+        patientName: 'Paciente Teste Supabase',
+        psychologistName: 'Psicólogo Teste',
+        date: '2026-08-20',
+        time: '14:00',
+        status: 'scheduled' as const
+      };
+
+      // 1. Usar a função existente registerSession()
+      let insertSuccess = false;
+      let insertError: string | null = null;
+      let registeredRecord = null;
+
+      try {
+        registeredRecord = await whatsappDbService.registerSession(testInput);
+        insertSuccess = !!registeredRecord;
+        console.log('[WHATSAPP DB TEST] INSERT realizado');
+        logger.info('WHATSAPP', '[WHATSAPP DB TEST] INSERT realizado');
+      } catch (err: any) {
+        insertError = err?.message || String(err);
+      }
+
+      // 2. Usar a função existente getSessionData()
+      let selectSuccess = false;
+      let selectError: string | null = null;
+      let fetchedRecord = null;
+
+      try {
+        fetchedRecord = await whatsappDbService.getSessionData('TESTE_SUPABASE_001');
+        selectSuccess = !!fetchedRecord;
+        console.log('[WHATSAPP DB TEST] SELECT realizado');
+        logger.info('WHATSAPP', '[WHATSAPP DB TEST] SELECT realizado');
+      } catch (err: any) {
+        selectError = err?.message || String(err);
+      }
+
+      // 3. Checagem direta no Supabase (sem fallback)
+      let supabaseDirectRecord = null;
+      let supabaseError: string | null = null;
+
+      if (isSupabaseConfigured) {
+        try {
+          const supabase = (whatsappDbService as any).supabase;
+          const { data, error } = await supabase
+            .from('whatsapp_sessions')
+            .select('*')
+            .eq('session_id', 'TESTE_SUPABASE_001')
+            .maybeSingle();
+
+          if (error) {
+            supabaseError = error.message;
+          } else {
+            supabaseDirectRecord = data;
+          }
+        } catch (sErr: any) {
+          supabaseError = sErr?.message || String(sErr);
+        }
+      }
+
+      console.log('[WHATSAPP DB TEST] Teste concluído');
+      logger.info('WHATSAPP', '[WHATSAPP DB TEST] Teste concluído');
+
+      return res.json({
+        success: true,
+        supabaseConfigured: isSupabaseConfigured,
+        supabaseDirectRecordFound: !!supabaseDirectRecord,
+        insertWorked: insertSuccess,
+        selectWorked: selectSuccess,
+        dataFound: fetchedRecord || registeredRecord || null,
+        errors: {
+          insertError,
+          selectError,
+          supabaseError
+        }
+      });
+    } catch (error: any) {
+      console.error('[WHATSAPP DB TEST] Erro no teste:', error?.message || error);
+      return res.status(500).json({
+        success: false,
+        error: error?.message || 'Erro ao executar teste'
+      });
+    }
   });
 
   // API Route: Registrador e Consulta do Sistema de Logs Centralizado
