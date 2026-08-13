@@ -212,12 +212,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Carregar Agendamentos Oficiais do Supabase
+  useEffect(() => {
+    const fetchAppointments = async () => {
+      try {
+        const userEmail = currentAccountEmail || 'sessaocerta@gmail.com';
+        const res = await fetch(`/api/appointments?email=${encodeURIComponent(userEmail)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.appointments)) {
+            setSessions(data.appointments);
+          }
+        }
+      } catch (err) {
+        console.warn('[APPOINTMENTS INIT ERROR] Não foi possível carregar agendamentos do Supabase:', err);
+      }
+    };
+
+    fetchAppointments();
+  }, [currentAccountEmail]);
+
   // Keep state synchronized whenever currentAccountEmail changes
   useEffect(() => {
     if (currentAccount) {
       setProfile(currentAccount.profile);
       setPatients(currentAccount.patients || []);
-      setSessions(currentAccount.sessions || []);
+      if (currentAccount.sessions && currentAccount.sessions.length > 0) {
+        setSessions(currentAccount.sessions);
+      }
     }
   }, [currentAccountEmail]);
 
@@ -521,28 +543,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Session actions
   const addSession = (sessionData: Omit<Session, 'id'>): Session => {
+    const tempId = `ses-${Date.now()}`;
     const newSession: Session = {
       ...sessionData,
-      id: `ses-${Date.now()}`,
+      id: tempId,
     };
+
+    // Atualização otimista imediata na UI
     setSessions((prev) => [newSession, ...prev]);
     addToast(`Sessão agendada para ${newSession.patientName} em ${newSession.date} às ${newSession.startTime}!`);
+
+    // Obter dados do paciente para enriquecimento de telefone e e-mail
+    const patient = patients.find(
+      (p) => p.id === sessionData.patientId || p.name.toLowerCase() === sessionData.patientName.toLowerCase()
+    );
+
+    // Persistência no Supabase via API backend
+    fetch('/api/appointments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...sessionData,
+        patientPhone: patient?.phone || patient?.emergencyContactPhone,
+        patientEmail: patient?.email,
+        userEmail: profile?.email || currentAccountEmail || 'sessaocerta@gmail.com',
+        userName: profile?.name || 'Dra. Fernanda',
+        userPhone: profile?.phone,
+        sendWhatsApp: true
+      })
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.session) {
+          // Atualiza o ID temporário para o UUID real persistido no Supabase
+          setSessions((prev) =>
+            prev.map((s) => (s.id === tempId ? { ...s, ...data.session } : s))
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('[APPOINTMENTS CREATE API ERROR]', err);
+      });
+
     return newSession;
   };
 
   const updateSession = (id: string, sessionData: Partial<Session>) => {
+    // Atualização reativa instantânea
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...sessionData } : s))
     );
     addToast('Sessão atualizada!');
+
+    // Persistência no Supabase
+    fetch(`/api/appointments/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sessionData)
+    }).catch((err) => {
+      console.error('[APPOINTMENTS UPDATE API ERROR]', err);
+    });
   };
 
   const deleteSession = (id: string) => {
+    // Atualização reativa instantânea
     setSessions((prev) => prev.filter((s) => s.id !== id));
     addToast('Sessão removida da agenda.', 'info');
+
+    // Persistência no Supabase (Soft Delete)
+    fetch(`/api/appointments/${id}`, {
+      method: 'DELETE'
+    }).catch((err) => {
+      console.error('[APPOINTMENTS DELETE API ERROR]', err);
+    });
   };
 
   const updateSessionStatus = (id: string, status: SessionStatus) => {
+    // Atualização reativa instantânea
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status } : s))
     );
@@ -556,9 +633,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       falta: 'Falta registrada',
     };
     addToast(`Status da sessão alterado para: ${statusLabels[status]}`);
+
+    // Persistência no Supabase
+    fetch(`/api/appointments/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    }).catch((err) => {
+      console.error('[APPOINTMENTS STATUS API ERROR]', err);
+    });
   };
 
   const updatePaymentStatus = (id: string, paymentStatus: PaymentStatus) => {
+    // Atualização reativa instantânea
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, paymentStatus } : s))
     );
@@ -567,6 +654,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? 'Pagamento registrado com sucesso! (PIX/Dinheiro/Cartão)'
         : 'Status financeiro atualizado.'
     );
+
+    // Persistência no Supabase
+    fetch(`/api/appointments/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentStatus })
+    }).catch((err) => {
+      console.error('[APPOINTMENTS PAYMENT API ERROR]', err);
+    });
   };
 
   const saveClinicalNotes = (
@@ -576,6 +672,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     homework?: string,
     topicsAddressed?: string[]
   ) => {
+    // Atualização reativa instantânea
     setSessions((prev) =>
       prev.map((s) =>
         s.id === id
@@ -591,6 +688,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     addToast('Prontuário e evolução clínica salvos em ambiente seguro!');
+
+    // Persistência no Supabase
+    fetch(`/api/appointments/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clinicalNotes,
+        moodRating,
+        homework,
+        topicsAddressed,
+        status: 'realizada'
+      })
+    }).catch((err) => {
+      console.error('[APPOINTMENTS CLINICAL NOTES API ERROR]', err);
+    });
   };
 
   // Confidentiality

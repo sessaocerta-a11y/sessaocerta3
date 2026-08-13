@@ -20,6 +20,7 @@ import {
   getSessionDataByPhone
 } from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
+import { appointmentDbService } from './src/services/appointmentDbService.js';
 
 
 const app = express();
@@ -431,6 +432,168 @@ Pendentes: ${pendingCount || 0}`,
     }
 
     return res.json({ success: true, session });
+  });
+
+  // =========================================================================
+  // API Routes: CRUD OFICIAL DE APPOINTMENTS (Sessões / Agendamentos no Supabase)
+  // =========================================================================
+
+  // 1. Listar Agendamentos
+  app.get('/api/appointments', async (req, res) => {
+    try {
+      const userEmail = (req.query.email as string) || 'sessaocerta@gmail.com';
+      const appointments = await appointmentDbService.getAppointments(userEmail);
+      return res.json({
+        success: true,
+        count: appointments.length,
+        appointments
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', 'Erro ao listar agendamentos', { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao listar agendamentos', details: error.message });
+    }
+  });
+
+  // 2. Criar Agendamento e disparar confirmação via WhatsApp
+  app.post('/api/appointments', async (req, res) => {
+    try {
+      const {
+        patientId,
+        patientName,
+        patientPhone,
+        patientEmail,
+        date,
+        startTime,
+        endTime,
+        durationMinutes,
+        type,
+        videoUrl,
+        price,
+        status,
+        paymentStatus,
+        clinicalNotes,
+        moodRating,
+        homework,
+        topicsAddressed,
+        userEmail,
+        userName,
+        userPhone,
+        sendWhatsApp = true
+      } = req.body;
+
+      if (!patientName || !date || !startTime) {
+        return res.status(400).json({
+          success: false,
+          error: 'Campos obrigatórios ausentes (patientName, date, startTime).'
+        });
+      }
+
+      // 1. Cria o agendamento no Supabase
+      const createdSession = await appointmentDbService.createAppointment({
+        patientId,
+        patientName,
+        patientPhone,
+        patientEmail,
+        date,
+        startTime,
+        endTime: endTime || startTime,
+        durationMinutes,
+        type,
+        videoUrl,
+        price,
+        status,
+        paymentStatus,
+        clinicalNotes,
+        moodRating,
+        homework,
+        topicsAddressed,
+        userEmail,
+        userName,
+        userPhone,
+        whatsappReminderSent: false
+      });
+
+      // 2. Disparo de confirmação via WhatsApp se telefone válido e habilitado
+      let whatsappSent = false;
+      const cleanPhone = (patientPhone || '').replace(/\D/g, '');
+      const validPhone = cleanPhone.length >= 10;
+
+      if (sendWhatsApp && validPhone) {
+        try {
+          const formattedPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+          const psychologistName = userName || 'Dra. Fernanda';
+
+          const waResult = await sendWhatsAppConfirmationMessage({
+            toPhone: formattedPhone,
+            patientName: createdSession.patientName,
+            psychologistName,
+            date: createdSession.date,
+            time: createdSession.startTime,
+            sessionId: createdSession.id
+          });
+
+          if (waResult.success) {
+            whatsappSent = true;
+            await appointmentDbService.updateAppointment(createdSession.id, { whatsappReminderSent: true });
+            createdSession.whatsappReminderSent = true;
+            logger.info('SESSIONS', `Confirmação de agendamento enviada via WhatsApp para ${formattedPhone} (Sessão: ${createdSession.id})`);
+          }
+        } catch (waErr: any) {
+          logger.warn('SESSIONS', 'Não foi possível enviar WhatsApp automático', { error: waErr.message });
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        session: createdSession,
+        whatsappSent
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', 'Erro ao criar agendamento', { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao criar agendamento', details: error.message });
+    }
+  });
+
+  // 3. Atualizar Agendamento
+  app.put('/api/appointments/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
+      }
+
+      const updated = await appointmentDbService.updateAppointment(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: 'Agendamento não encontrado para atualização.' });
+      }
+
+      return res.json({
+        success: true,
+        session: updated
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', `Erro ao atualizar agendamento ${req.params.id}`, { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao atualizar agendamento', details: error.message });
+    }
+  });
+
+  // 4. Excluir Agendamento (Soft Delete)
+  app.delete('/api/appointments/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
+      }
+
+      const deleted = await appointmentDbService.deleteAppointment(id);
+      return res.json({
+        success: deleted,
+        message: deleted ? 'Agendamento removido com sucesso' : 'Falha ao remover agendamento'
+      });
+    } catch (error: any) {
+      logger.error('SESSIONS', `Erro ao excluir agendamento ${req.params.id}`, { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao excluir agendamento', details: error.message });
+    }
   });
 
 

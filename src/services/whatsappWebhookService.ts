@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.js';
+import { appointmentDbService } from './appointmentDbService.js';
 
 export interface WhatsAppContactProfile {
   name?: string;
@@ -849,6 +850,14 @@ Timestamp: ${formattedTime}
 
                 if (newStatus && foundSessionId) {
                   await whatsappDbService.updateSessionStatus(foundSessionId, newStatus);
+                  
+                  // Atualizar o status correspondente diretamente na tabela appointments do Supabase
+                  const dbAppointmentStatus = 
+                    actionKey === 'confirm_session' ? 'confirmed' :
+                    actionKey === 'cancel_session' ? 'cancelled_by_patient' :
+                    actionKey === 'reschedule_session' ? 'reschedule_requested' : 'confirmed';
+
+                  await appointmentDbService.updateAppointmentStatus(foundSessionId, dbAppointmentStatus);
                 }
 
                 if (rawFrom && replyMsg) {
