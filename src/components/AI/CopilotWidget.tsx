@@ -6,6 +6,7 @@ import {
   ClaraProactiveInsight
 } from '../../types';
 import { ClaraEngine } from '../../services/claraEngine';
+import { authenticatedFetch } from '../../services/apiClient';
 import {
   Bot,
   Send,
@@ -307,9 +308,8 @@ export const CopilotWidget: React.FC = () => {
     }
 
     try {
-      const response = await fetch('/api/ai/copilot', {
+      const response = await authenticatedFetch('/api/ai/copilot', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
           context: {

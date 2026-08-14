@@ -13,6 +13,8 @@ import {
   initialPatients,
   initialSessions
 } from '../data/mockData';
+import { supabase } from '../lib/supabaseClient';
+import { authenticatedFetch } from '../services/apiClient';
 
 interface ToastMessage {
   id: string;
@@ -30,14 +32,14 @@ interface AppContextType {
     password: string;
     phone: string;
     crp: string;
-  }) => { verificationCode: string; email: string };
-  verifyAccountCode: (email: string, code: string) => { success: boolean; message?: string };
+  }) => Promise<{ verificationCode: string; email: string }>;
+  verifyAccountCode: (email: string, code: string) => Promise<{ success: boolean; message?: string }>;
   resendVerificationCode: (email: string) => string;
   loginWithCredentials: (
     email: string,
     password: string
-  ) => { success: boolean; requiresVerification?: boolean; message?: string };
-  logoutAccount: () => void;
+  ) => Promise<{ success: boolean; requiresVerification?: boolean; message?: string }>;
+  logoutAccount: () => Promise<void>;
   requestPasswordReset: (email: string) => { success: boolean; code?: string; message?: string };
   confirmPasswordReset: (email: string, code: string, newPassword: string) => { success: boolean; message?: string };
 
@@ -212,24 +214,77 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Carregar Agendamentos Oficiais do Supabase
+  // Carregar Agendamentos Oficiais do Supabase e Sincronizar Sessão Supabase Auth
   useEffect(() => {
-    const fetchAppointments = async () => {
+    let isMounted = true;
+
+    const initAuthAndAppointments = async () => {
       try {
-        const userEmail = currentAccountEmail || 'sessaocerta@gmail.com';
-        const res = await fetch(`/api/appointments?email=${encodeURIComponent(userEmail)}`);
-        if (res.ok) {
+        if (supabase) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user?.email && isMounted) {
+            const authEmail = session.user.email.toLowerCase();
+            setCurrentAccountEmail(authEmail);
+
+            // Sincroniza usuário na tabela users se necessário
+            const meta = session.user.user_metadata || {};
+            authenticatedFetch('/api/auth/sync-user', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: meta.name || meta.full_name || 'Profissional',
+                phone: meta.phone || meta.whatsapp || '',
+                crp: meta.crp || ''
+              })
+            }).catch(() => {});
+          }
+        }
+
+        // Busca agendamentos do backend autenticado
+        const res = await authenticatedFetch('/api/appointments');
+        if (res.ok && isMounted) {
           const data = await res.json();
           if (data.success && Array.isArray(data.appointments)) {
             setSessions(data.appointments);
           }
         }
       } catch (err) {
-        console.warn('[APPOINTMENTS INIT ERROR] Não foi possível carregar agendamentos do Supabase:', err);
+        console.warn('[APPOINTMENTS INIT ERROR] Não foi possível carregar agendamentos:', err);
       }
     };
 
-    fetchAppointments();
+    initAuthAndAppointments();
+
+    // Listener para mudanças de estado de autenticação no Supabase Auth
+    let authListener: { subscription: { unsubscribe: () => void } } | null = null;
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+        if (event === 'SIGNED_IN' && session?.user?.email) {
+          const authEmail = session.user.email.toLowerCase();
+          setCurrentAccountEmail(authEmail);
+          
+          try {
+            const res = await authenticatedFetch('/api/appointments');
+            if (res.ok) {
+              const apptData = await res.json();
+              if (apptData.success && Array.isArray(apptData.appointments)) {
+                setSessions(apptData.appointments);
+              }
+            }
+          } catch (e) {}
+        } else if (event === 'SIGNED_OUT') {
+          // Manter estado limpo no logout
+        }
+      });
+      authListener = data;
+    }
+
+    return () => {
+      isMounted = false;
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
   }, [currentAccountEmail]);
 
   // Keep state synchronized whenever currentAccountEmail changes
@@ -558,15 +613,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       (p) => p.id === sessionData.patientId || p.name.toLowerCase() === sessionData.patientName.toLowerCase()
     );
 
-    // Persistência no Supabase via API backend
-    fetch('/api/appointments', {
+    // Persistência no Supabase via API backend autenticada
+    authenticatedFetch('/api/appointments', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...sessionData,
         patientPhone: patient?.phone || patient?.emergencyContactPhone,
         patientEmail: patient?.email,
-        userEmail: profile?.email || currentAccountEmail || 'sessaocerta@gmail.com',
         userName: profile?.name || 'Dra. Fernanda',
         userPhone: profile?.phone,
         sendWhatsApp: true
@@ -595,10 +648,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     addToast('Sessão atualizada!');
 
-    // Persistência no Supabase
-    fetch(`/api/appointments/${id}`, {
+    // Persistência no Supabase via authenticatedFetch
+    authenticatedFetch(`/api/appointments/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sessionData)
     }).catch((err) => {
       console.error('[APPOINTMENTS UPDATE API ERROR]', err);
@@ -610,8 +662,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSessions((prev) => prev.filter((s) => s.id !== id));
     addToast('Sessão removida da agenda.', 'info');
 
-    // Persistência no Supabase (Soft Delete)
-    fetch(`/api/appointments/${id}`, {
+    // Persistência no Supabase (Soft Delete) via authenticatedFetch
+    authenticatedFetch(`/api/appointments/${id}`, {
       method: 'DELETE'
     }).catch((err) => {
       console.error('[APPOINTMENTS DELETE API ERROR]', err);
@@ -634,10 +686,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     addToast(`Status da sessão alterado para: ${statusLabels[status]}`);
 
-    // Persistência no Supabase
-    fetch(`/api/appointments/${id}`, {
+    // Persistência no Supabase via authenticatedFetch
+    authenticatedFetch(`/api/appointments/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status })
     }).catch((err) => {
       console.error('[APPOINTMENTS STATUS API ERROR]', err);
@@ -655,10 +706,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : 'Status financeiro atualizado.'
     );
 
-    // Persistência no Supabase
-    fetch(`/api/appointments/${id}`, {
+    // Persistência no Supabase via authenticatedFetch
+    authenticatedFetch(`/api/appointments/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ paymentStatus })
     }).catch((err) => {
       console.error('[APPOINTMENTS PAYMENT API ERROR]', err);
@@ -689,10 +739,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     addToast('Prontuário e evolução clínica salvos em ambiente seguro!');
 
-    // Persistência no Supabase
-    fetch(`/api/appointments/${id}`, {
+    // Persistência no Supabase via authenticatedFetch
+    authenticatedFetch(`/api/appointments/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clinicalNotes,
         moodRating,
@@ -759,8 +808,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodeURIComponent(msg)}`;
   };
 
-  // 1. Register Account
-  const registerAccount = (data: {
+  // 1. Register Account com Supabase Auth
+  const registerAccount = async (data: {
     name: string;
     email: string;
     password: string;
@@ -771,6 +820,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = accounts.find((acc) => acc.email.toLowerCase() === emailLower);
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const now = Date.now();
+
+    // Criação no Supabase Auth
+    if (supabase) {
+      try {
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: emailLower,
+          password: data.password,
+          options: {
+            data: {
+              name: data.name,
+              phone: data.phone,
+              crp: data.crp || 'CRP Registrado'
+            }
+          }
+        });
+
+        if (signUpError && !signUpError.message.includes('already registered')) {
+          console.warn('[SUPABASE AUTH SIGNUP WARN]', signUpError.message);
+        }
+      } catch (err: any) {
+        console.warn('[SUPABASE AUTH SIGNUP EXCEPTION]', err.message);
+      }
+    }
 
     if (existing) {
       if (existing.isConfirmed) {
@@ -833,7 +905,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // 2. Verify Account Code
-  const verifyAccountCode = (email: string, code: string) => {
+  const verifyAccountCode = async (email: string, code: string) => {
     const emailLower = email.trim().toLowerCase();
     const cleanCode = code.trim();
     const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
@@ -892,6 +964,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setProfile(acc.profile);
       setPatients(acc.patients || []);
       setSessions(acc.sessions || []);
+
+      // Tenta login no Supabase Auth para emitir JWT
+      if (supabase && acc.password) {
+        try {
+          const { data: authData } = await supabase.auth.signInWithPassword({
+            email: emailLower,
+            password: acc.password
+          });
+
+          if (authData?.user?.id) {
+            await authenticatedFetch('/api/auth/sync-user', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: acc.name,
+                phone: acc.phone,
+                crp: acc.crp
+              })
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+
       addToast('E-mail verificado e conta ativada com sucesso!', 'success');
       return { success: true };
     }
@@ -933,9 +1027,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newCode;
   };
 
-  // 4. Login With Credentials
-  const loginWithCredentials = (email: string, password: string) => {
+  // 4. Login With Credentials (com Supabase Auth Real)
+  const loginWithCredentials = async (email: string, password: string) => {
     const emailLower = email.trim().toLowerCase();
+    let supabaseSuccess = false;
+
+    // 1. Autenticação oficial via Supabase Auth
+    if (supabase) {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: emailLower,
+          password
+        });
+
+        if (!authError && authData?.session) {
+          supabaseSuccess = true;
+          setCurrentAccountEmail(emailLower);
+
+          // Sincroniza usuário na tabela users
+          const meta = authData.user?.user_metadata || {};
+          await authenticatedFetch('/api/auth/sync-user', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: meta.name || meta.full_name || 'Profissional',
+              phone: meta.phone || meta.whatsapp || '',
+              crp: meta.crp || ''
+            })
+          }).catch(() => {});
+
+          // Carrega agendamentos reais do usuário
+          try {
+            const apptRes = await authenticatedFetch('/api/appointments');
+            if (apptRes.ok) {
+              const apptData = await apptRes.json();
+              if (apptData.success && Array.isArray(apptData.appointments)) {
+                setSessions(apptData.appointments);
+              }
+            }
+          } catch (e) {}
+
+          addToast(`Bem-vindo(a) de volta!`, 'success');
+          return { success: true };
+        }
+      } catch (err: any) {
+        console.warn('[SUPABASE LOGIN EXCEPTION]', err.message);
+      }
+    }
+
+    // 2. Fallback de contas locais (caso Supabase offline ou admin local)
     const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
 
     if (!acc) {
@@ -956,7 +1095,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (acc.password !== password) {
       if (isAccAdmin && (password === 'SC_Admin@2026!' || password === 'admin123')) {
-        // Automatically sync password
         setAccounts((prev) =>
           prev.map((a) => (a.email.toLowerCase() === emailLower ? { ...a, password } : a))
         );
@@ -998,7 +1136,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // 5. Logout Account
-  const logoutAccount = () => {
+  const logoutAccount = async () => {
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('[SUPABASE SIGNOUT WARN]', err);
+      }
+    }
+
     setCurrentAccountEmail(null);
     setProfile(defaultPsychologistProfile);
     setPatients([]);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authenticatedFetch } from '../../services/apiClient';
 import {
   Sparkles,
   X,
@@ -49,9 +50,8 @@ export const AiMessageGeneratorModal: React.FC<AiMessageGeneratorModalProps> = (
     setIsCopied(false);
 
     try {
-      const response = await fetch('/api/ai/message-generator', {
+      const response = await authenticatedFetch('/api/ai/message-generator', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patientName,
           date,

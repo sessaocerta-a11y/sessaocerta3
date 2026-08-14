@@ -21,6 +21,7 @@ import {
 } from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
 import { appointmentDbService } from './src/services/appointmentDbService.js';
+import { requireAuth, optionalAuth } from './src/middleware/authMiddleware.js';
 
 
 const app = express();
@@ -43,7 +44,7 @@ const getGenAI = () => {
 };
 
   // API Route: Copiloto do Consultório (Chat & Administrative Assistant: Clara)
-  app.post('/api/ai/copilot', async (req, res) => {
+  app.post('/api/ai/copilot', requireAuth, async (req, res) => {
     try {
       const { prompt, context } = req.body;
       const ai = getGenAI();
@@ -116,7 +117,7 @@ Quando alguém solicitar uma avaliação psicológica ou orientação clínica, 
   });
 
   // API Route: Gerador Inteligente de Mensagens WhatsApp
-  app.post('/api/ai/message-generator', async (req, res) => {
+  app.post('/api/ai/message-generator', requireAuth, async (req, res) => {
     try {
       const { patientName, date, time, topic, tone = 'amigavel' } = req.body;
       const ai = getGenAI();
@@ -161,7 +162,7 @@ Tom desejado: ${tone} (opções: profissional, amigavel, formal)`,
   });
 
   // API Route: Briefing do Dia
-  app.post('/api/ai/daily-briefing', async (req, res) => {
+  app.post('/api/ai/daily-briefing', requireAuth, async (req, res) => {
     try {
       const { todaySessionsCount, confirmedCount, pendingCount, practitionerName } = req.body;
       const ai = getGenAI();
@@ -193,6 +194,28 @@ Pendentes: ${pendingCount || 0}`,
     } catch (error: any) {
       console.error('Erro no Daily Briefing:', error);
       res.status(500).json({ error: 'Erro ao gerar briefing', details: error.message });
+    }
+  });
+
+  // API Route: Sincronização do Registro do Usuário Autenticado na Tabela users (auth.uid = users.id)
+  app.post('/api/auth/sync-user', requireAuth, async (req, res) => {
+    try {
+      const { name, phone, crp } = req.body;
+      const userId = req.userId!;
+      const userEmail = req.userEmail || (req.user as any)?.email || '';
+
+      await appointmentDbService.ensureUserRecord({
+        id: userId,
+        email: userEmail,
+        name,
+        phone,
+        crp
+      });
+
+      return res.json({ success: true, userId, email: userEmail });
+    } catch (error: any) {
+      logger.error('AUTH', 'Erro ao sincronizar usuário autenticado', { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao sincronizar usuário' });
     }
   });
 
@@ -382,7 +405,7 @@ Pendentes: ${pendingCount || 0}`,
   });
 
   // API Route: Envio de Confirmação de Consulta via WhatsApp (Mensagem Interativa com Botões)
-  app.post('/api/sessions/send-whatsapp-confirmation', async (req, res) => {
+  app.post('/api/sessions/send-whatsapp-confirmation', requireAuth, async (req, res) => {
     try {
       const { to, patientName, psychologistName, date, time, sessionId } = req.body;
 
@@ -417,7 +440,7 @@ Pendentes: ${pendingCount || 0}`,
   });
 
   // API Route: Consulta do status de uma sessão
-  app.get('/api/sessions/status', async (req, res) => {
+  app.get('/api/sessions/status', optionalAuth, async (req, res) => {
     const { sessionId, phone } = req.query;
     let session = null;
 
@@ -438,11 +461,11 @@ Pendentes: ${pendingCount || 0}`,
   // API Routes: CRUD OFICIAL DE APPOINTMENTS (Sessões / Agendamentos no Supabase)
   // =========================================================================
 
-  // 1. Listar Agendamentos
-  app.get('/api/appointments', async (req, res) => {
+  // 1. Listar Agendamentos (Isolamento estrito por req.userId)
+  app.get('/api/appointments', requireAuth, async (req, res) => {
     try {
-      const userEmail = (req.query.email as string) || 'sessaocerta@gmail.com';
-      const appointments = await appointmentDbService.getAppointments(userEmail);
+      const userId = req.userId!;
+      const appointments = await appointmentDbService.getAppointments(userId);
       return res.json({
         success: true,
         count: appointments.length,
@@ -454,9 +477,10 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
-  // 2. Criar Agendamento e disparar confirmação via WhatsApp
-  app.post('/api/appointments', async (req, res) => {
+  // 2. Criar Agendamento e disparar confirmação via WhatsApp (Vinculado a req.userId)
+  app.post('/api/appointments', requireAuth, async (req, res) => {
     try {
+      const userId = req.userId!;
       const {
         patientId,
         patientName,
@@ -475,7 +499,6 @@ Pendentes: ${pendingCount || 0}`,
         moodRating,
         homework,
         topicsAddressed,
-        userEmail,
         userName,
         userPhone,
         sendWhatsApp = true
@@ -488,7 +511,7 @@ Pendentes: ${pendingCount || 0}`,
         });
       }
 
-      // 1. Cria o agendamento no Supabase
+      // 1. Cria o agendamento no Supabase garantindo req.userId
       const createdSession = await appointmentDbService.createAppointment({
         patientId,
         patientName,
@@ -507,11 +530,11 @@ Pendentes: ${pendingCount || 0}`,
         moodRating,
         homework,
         topicsAddressed,
-        userEmail,
+        userEmail: req.userEmail,
         userName,
         userPhone,
         whatsappReminderSent: false
-      });
+      }, userId);
 
       // 2. Disparo de confirmação via WhatsApp se telefone válido e habilitado
       let whatsappSent = false;
@@ -534,7 +557,7 @@ Pendentes: ${pendingCount || 0}`,
 
           if (waResult.success) {
             whatsappSent = true;
-            await appointmentDbService.updateAppointment(createdSession.id, { whatsappReminderSent: true });
+            await appointmentDbService.updateAppointment(createdSession.id, userId, { whatsappReminderSent: true });
             createdSession.whatsappReminderSent = true;
             logger.info('SESSIONS', `Confirmação de agendamento enviada via WhatsApp para ${formattedPhone} (Sessão: ${createdSession.id})`);
           }
@@ -554,17 +577,22 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
-  // 3. Atualizar Agendamento
-  app.put('/api/appointments/:id', async (req, res) => {
+  // 3. Atualizar Agendamento (Proteção contra IDOR: exige que o agendamento pertença a req.userId)
+  app.put('/api/appointments/:id', requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
+      const userId = req.userId!;
+
       if (!id) {
         return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
       }
 
-      const updated = await appointmentDbService.updateAppointment(id, req.body);
+      const updated = await appointmentDbService.updateAppointment(id, userId, req.body);
       if (!updated) {
-        return res.status(404).json({ success: false, error: 'Agendamento não encontrado para atualização.' });
+        return res.status(403).json({
+          success: false,
+          error: 'Ação não permitida (403): O agendamento informado não pertence ao seu usuário ou não existe.'
+        });
       }
 
       return res.json({
@@ -577,18 +605,27 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
-  // 4. Excluir Agendamento (Soft Delete)
-  app.delete('/api/appointments/:id', async (req, res) => {
+  // 4. Excluir Agendamento (Proteção contra IDOR: exige que o agendamento pertença a req.userId)
+  app.delete('/api/appointments/:id', requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
+      const userId = req.userId!;
+
       if (!id) {
         return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
       }
 
-      const deleted = await appointmentDbService.deleteAppointment(id);
+      const deleted = await appointmentDbService.deleteAppointment(id, userId);
+      if (!deleted) {
+        return res.status(403).json({
+          success: false,
+          error: 'Ação não permitida (403): O agendamento informado não pertence ao seu usuário ou não existe.'
+        });
+      }
+
       return res.json({
-        success: deleted,
-        message: deleted ? 'Agendamento removido com sucesso' : 'Falha ao remover agendamento'
+        success: true,
+        message: 'Agendamento removido com sucesso'
       });
     } catch (error: any) {
       logger.error('SESSIONS', `Erro ao excluir agendamento ${req.params.id}`, { error: error.message });
@@ -596,17 +633,15 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
-
-
   // API Route: Registrador e Consulta do Sistema de Logs Centralizado
-  app.get('/api/logs', (req, res) => {
+  app.get('/api/logs', requireAuth, (req, res) => {
     const category = req.query.category as any;
     const limit = Number(req.query.limit) || 100;
     const logs = logger.getLogs(limit, category);
     res.json({ success: true, count: logs.length, logs });
   });
 
-  app.post('/api/logs', (req, res) => {
+  app.post('/api/logs', requireAuth, (req, res) => {
     const { level = 'info', category = 'SYSTEM', message, meta } = req.body;
     if (!message) {
       return res.status(400).json({ error: 'Mensagem do log é obrigatória.' });
@@ -623,6 +658,13 @@ Pendentes: ${pendingCount || 0}`,
     }
 
     res.json({ success: true });
+  });
+
+  // API Route: Consulta de Auditoria de E-mails Enviados
+  app.get('/api/email-audit', requireAuth, (req, res) => {
+    const limit = Number(req.query.limit) || 100;
+    const records = emailAuditDb.getAllRecords(limit);
+    res.json({ success: true, count: records.length, records });
   });
 
   // API Route: Webhook oficial para receber eventos de entrega/falha do Resend

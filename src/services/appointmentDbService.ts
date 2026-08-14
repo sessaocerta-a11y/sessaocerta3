@@ -51,7 +51,8 @@ export const DB_TO_STATUS: Record<string, SessionStatus> = {
 
 class AppointmentDbService {
   private supabase: SupabaseClient | null = null;
-  private localFallbackSessions: Map<string, Session> = new Map();
+  // Cache em memória isolado por userId: Map<userId, Map<sessionId, Session>>
+  private userFallbackSessions: Map<string, Map<string, Session>> = new Map();
 
   constructor() {
     this.initSupabase();
@@ -77,54 +78,63 @@ class AppointmentDbService {
     return Boolean(this.supabase);
   }
 
+  private getUserMap(userId: string): Map<string, Session> {
+    if (!this.userFallbackSessions.has(userId)) {
+      this.userFallbackSessions.set(userId, new Map());
+    }
+    return this.userFallbackSessions.get(userId)!;
+  }
+
   /**
-   * Localiza ou cria o registro do psicólogo na tabela users para manter integridade relacional
+   * Garante a existência do registro do usuário na tabela pública users com id = auth.users.id
    */
-  public async getOrCreateUser(email?: string, name?: string, phone?: string): Promise<string | null> {
-    if (!this.supabase) return null;
-    const userEmail = (email || 'sessaocerta@gmail.com').toLowerCase().trim();
-    const userName = name || 'Dra. Fernanda';
-    const userPhone = (phone || '5511999999999').replace(/\D/g, '');
+  public async ensureUserRecord(user: {
+    id: string;
+    email: string;
+    name?: string;
+    phone?: string;
+    crp?: string;
+  }): Promise<string | null> {
+    if (!this.supabase || !user?.id) return user?.id || null;
 
     try {
-      // 1. Tenta buscar usuário existente pelo e-mail
-      const { data: existingUser, error: findError } = await this.supabase
+      const { data: existingUser } = await this.supabase
         .from('users')
         .select('id')
-        .eq('email', userEmail)
+        .eq('id', user.id)
         .maybeSingle();
 
-      if (!findError && existingUser?.id) {
+      if (existingUser?.id) {
         return existingUser.id;
       }
 
-      // 2. Se não existir, insere um novo usuário
       const { data: newUser, error: insertError } = await this.supabase
         .from('users')
         .insert({
-          email: userEmail,
-          nome: userName,
-          whatsapp: userPhone || '5511999999999',
-          crp: 'CRP 06/142859',
-          especialidade: 'Terapia Cognitivo-Comportamental'
+          id: user.id,
+          email: user.email.toLowerCase().trim(),
+          nome: user.name || 'Profissional',
+          whatsapp: (user.phone || '5511999999999').replace(/\D/g, ''),
+          crp: user.crp || 'CRP Registrado',
+          especialidade: 'Psicologia Clínica'
         })
         .select('id')
         .single();
 
       if (!insertError && newUser?.id) {
+        logger.info('AUTH', `[APPOINTMENT DB] Registro criado na tabela users para auth.uid ${user.id}`);
         return newUser.id;
       }
 
-      logger.warn('SESSIONS', '[APPOINTMENT DB] Falha ao criar usuário na tabela users', { error: insertError?.message });
-      return null;
+      return user.id;
     } catch (err: any) {
-      logger.error('SESSIONS', '[APPOINTMENT DB] Exceção em getOrCreateUser', { error: err.message });
-      return null;
+      logger.error('AUTH', '[APPOINTMENT DB] Exceção em ensureUserRecord', { error: err.message });
+      return user.id;
     }
   }
 
   /**
-   * Localiza ou cria o registro do paciente na tabela patients para garantir patient_id válido
+   * Localiza ou cria o registro do paciente na tabela patients vinculado estritamente ao userId autenticado
    */
   public async getOrCreatePatient(
     userId: string,
@@ -140,7 +150,7 @@ class AppointmentDbService {
     const cleanEmail = (patientEmail || '').trim().toLowerCase();
     const cleanName = (patientName || 'Paciente').trim();
 
-    // 1. Se foi passado um UUID válido, verifica se o paciente existe com este ID
+    // 1. Se foi passado um UUID válido, verifica se o paciente existe e pertence ao userId
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(providedPatientId || '');
     if (isUuid && providedPatientId) {
       try {
@@ -148,6 +158,7 @@ class AppointmentDbService {
           .from('patients')
           .select('id')
           .eq('id', providedPatientId)
+          .eq('user_id', userId)
           .maybeSingle();
 
         if (byId?.id) {
@@ -159,7 +170,7 @@ class AppointmentDbService {
     }
 
     try {
-      // 2. Busca por nome no mesmo consultório (user_id)
+      // 2. Busca por nome no consultório exclusivo do psicólogo autenticado (user_id)
       const { data: byName } = await this.supabase
         .from('patients')
         .select('id, whatsapp, email')
@@ -169,7 +180,6 @@ class AppointmentDbService {
         .maybeSingle();
 
       if (byName?.id) {
-        // Se encontramos o paciente e temos novo telefone/email, atualizamos se necessário
         if ((cleanPhone && !byName.whatsapp) || (cleanEmail && !byName.email)) {
           await this.supabase
             .from('patients')
@@ -178,12 +188,13 @@ class AppointmentDbService {
               email: cleanEmail || byName.email,
               updated_at: new Date().toISOString()
             })
-            .eq('id', byName.id);
+            .eq('id', byName.id)
+            .eq('user_id', userId);
         }
         return byName.id;
       }
 
-      // 3. Se não encontrar por nome, busca por whatsapp (se fornecido)
+      // 3. Busca por whatsapp no consultório exclusivo do psicólogo
       if (cleanPhone) {
         const { data: byPhone } = await this.supabase
           .from('patients')
@@ -198,7 +209,7 @@ class AppointmentDbService {
         }
       }
 
-      // 4. Se não existe, cria novo paciente com integridade referencial
+      // 4. Cria novo paciente vinculado com integridade estrita a user_id
       const { data: newPatient, error: insertErr } = await this.supabase
         .from('patients')
         .insert({
@@ -215,7 +226,7 @@ class AppointmentDbService {
         .single();
 
       if (!insertErr && newPatient?.id) {
-        logger.info('SESSIONS', `[APPOINTMENT DB] Paciente cadastrado no Supabase: ${cleanName} (ID: ${newPatient.id})`);
+        logger.info('SESSIONS', `[APPOINTMENT DB] Paciente cadastrado no Supabase para user ${userId}: ${cleanName} (ID: ${newPatient.id})`);
         return newPatient.id;
       }
 
@@ -234,7 +245,6 @@ class AppointmentDbService {
     const rawStatus = record.status || 'scheduled';
     const frontendStatus = DB_TO_STATUS[rawStatus] || 'agendada';
 
-    // Formata horários para HH:mm
     const formatTime = (t?: string) => {
       if (!t) return '10:00';
       return t.length >= 5 ? t.substring(0, 5) : t;
@@ -265,12 +275,16 @@ class AppointmentDbService {
   }
 
   /**
-   * Lista todos os agendamentos ativos da tabela appointments do Supabase
+   * Lista todos os agendamentos pertencentes exclusivamente ao userId autenticado
    */
-  public async getAppointments(userEmail?: string): Promise<Session[]> {
+  public async getAppointments(userId: string): Promise<Session[]> {
+    if (!userId) {
+      return [];
+    }
+
     if (this.supabase) {
       try {
-        let query = this.supabase
+        const { data, error } = await this.supabase
           .from('appointments')
           .select(`
             id,
@@ -302,40 +316,40 @@ class AppointmentDbService {
               phone: telefone
             )
           `)
+          .eq('user_id', userId)
           .is('deleted_at', null)
           .order('data', { ascending: false })
           .order('hora_inicio', { ascending: true });
 
-        const { data, error } = await query;
-
         if (!error && Array.isArray(data)) {
           const sessions = data.map((item) => this.mapDbToSession(item));
-          // Atualiza cache em memória
-          sessions.forEach((s) => this.localFallbackSessions.set(s.id, s));
+          const userMap = this.getUserMap(userId);
+          userMap.clear();
+          sessions.forEach((s) => userMap.set(s.id, s));
           return sessions;
         }
 
         if (error) {
-          logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao consultar appointments no Supabase', { error: error.message });
+          logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao consultar appointments no Supabase', { error: error.message, userId });
         }
       } catch (err: any) {
-        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao consultar appointments', { error: err.message });
+        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao consultar appointments', { error: err.message, userId });
       }
     }
 
-    // Fallback para sessões em memória
-    return Array.from(this.localFallbackSessions.values());
+    // Fallback para sessões em memória do respectivo usuário
+    return Array.from(this.getUserMap(userId).values());
   }
 
   /**
-   * Busca um agendamento específico por ID
+   * Busca um agendamento específico por ID garantindo isolamento por userId
    */
-  public async getAppointmentById(id: string): Promise<Session | null> {
+  public async getAppointmentById(id: string, userId?: string): Promise<Session | null> {
     if (!id) return null;
 
     if (this.supabase) {
       try {
-        const { data, error } = await this.supabase
+        let query = this.supabase
           .from('appointments')
           .select(`
             *,
@@ -347,8 +361,13 @@ class AppointmentDbService {
               telefone
             )
           `)
-          .eq('id', id)
-          .maybeSingle();
+          .eq('id', id);
+
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query.maybeSingle();
 
         if (!error && data) {
           return this.mapDbToSession(data);
@@ -358,48 +377,55 @@ class AppointmentDbService {
       }
     }
 
-    return this.localFallbackSessions.get(id) || null;
+    if (userId) {
+      return this.getUserMap(userId).get(id) || null;
+    }
+
+    // Busca global em todos os mapas de fallback (ex: para webhook interno)
+    for (const map of this.userFallbackSessions.values()) {
+      if (map.has(id)) return map.get(id)!;
+    }
+
+    return null;
   }
 
   /**
-   * Cria um novo agendamento com persistência real na tabela appointments do Supabase
+   * Cria um novo agendamento com persistência real vinculado estritamente ao userId autenticado
    */
-  public async createAppointment(input: CreateAppointmentInput): Promise<Session> {
+  public async createAppointment(input: CreateAppointmentInput, userId: string): Promise<Session> {
+    if (!userId) {
+      throw new Error('Identificador de usuário (userId) obrigatório para criação de agendamento.');
+    }
+
     const now = new Date().toISOString();
     const dbStatus = STATUS_TO_DB[input.status || 'agendada'] || 'scheduled';
     const cleanType = input.type || 'presencial';
     const cleanPrice = input.price !== undefined ? Number(input.price) : 200;
 
-    let userId: string | null = null;
     let patientId: string | null = null;
 
     if (this.supabase) {
       try {
-        // 1. Garante integridade do usuário (psicólogo)
-        userId = await this.getOrCreateUser(input.userEmail, input.userName, input.userPhone);
+        // 1. Garante que o paciente pertence ao usuário autenticado
+        patientId = await this.getOrCreatePatient(
+          userId,
+          input.patientName,
+          input.patientPhone,
+          input.patientEmail,
+          cleanType,
+          cleanPrice,
+          input.patientId
+        );
 
-        // 2. Garante integridade do paciente (tabela patients)
-        if (userId) {
-          patientId = await this.getOrCreatePatient(
-            userId,
-            input.patientName,
-            input.patientPhone,
-            input.patientEmail,
-            cleanType,
-            cleanPrice,
-            input.patientId
-          );
-        }
-
-        // 3. Insere o appointment no Supabase
-        if (userId && patientId) {
+        // 2. Insere o appointment no Supabase
+        if (patientId) {
           const insertPayload: any = {
             user_id: userId,
             patient_id: patientId,
             titulo: input.patientName,
             data: input.date,
             hora_inicio: input.startTime,
-            hora_fim: input.endTime,
+            hora_fim: input.endTime || input.startTime,
             duracao_minutos: input.durationMinutes || 50,
             modalidade: cleanType,
             video_url: cleanType === 'online' ? input.videoUrl : null,
@@ -431,21 +457,21 @@ class AppointmentDbService {
 
           if (!error && data) {
             const createdSession = this.mapDbToSession(data);
-            this.localFallbackSessions.set(createdSession.id, createdSession);
-            logger.info('SESSIONS', `[APPOINTMENT DB] Appointment criado no Supabase com sucesso! ID: ${createdSession.id}`);
+            this.getUserMap(userId).set(createdSession.id, createdSession);
+            logger.info('SESSIONS', `[APPOINTMENT DB] Appointment criado no Supabase com sucesso! ID: ${createdSession.id} (User: ${userId})`);
             return createdSession;
           }
 
           if (error) {
-            logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao inserir appointment no Supabase', { error: error.message });
+            logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao inserir appointment no Supabase', { error: error.message, userId });
           }
         }
       } catch (err: any) {
-        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao criar appointment', { error: err.message });
+        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao criar appointment', { error: err.message, userId });
       }
     }
 
-    // Fallback resiliente caso Supabase não esteja disponível
+    // Fallback resiliente em memória isolado por usuário
     const fallbackId = `ses-${Date.now()}`;
     const fallbackSession: Session = {
       id: fallbackId,
@@ -453,7 +479,7 @@ class AppointmentDbService {
       patientName: input.patientName,
       date: input.date,
       startTime: input.startTime,
-      endTime: input.endTime,
+      endTime: input.endTime || input.startTime,
       durationMinutes: input.durationMinutes || 50,
       type: cleanType,
       videoUrl: cleanType === 'online' ? input.videoUrl : undefined,
@@ -467,15 +493,19 @@ class AppointmentDbService {
       whatsappReminderDate: now
     };
 
-    this.localFallbackSessions.set(fallbackId, fallbackSession);
+    this.getUserMap(userId).set(fallbackId, fallbackSession);
     return fallbackSession;
   }
 
   /**
-   * Atualiza um agendamento existente no Supabase
+   * Atualiza um agendamento existente garantindo que pertence ao userId autenticado
    */
-  public async updateAppointment(id: string, input: Partial<CreateAppointmentInput>): Promise<Session | null> {
-    if (!id) return null;
+  public async updateAppointment(
+    id: string,
+    userId: string,
+    input: Partial<CreateAppointmentInput>
+  ): Promise<Session | null> {
+    if (!id || !userId) return null;
     const now = new Date().toISOString();
 
     if (this.supabase) {
@@ -503,6 +533,7 @@ class AppointmentDbService {
           .from('appointments')
           .update(updatePayload)
           .eq('id', id)
+          .eq('user_id', userId) // ISOLAMENTO RIGOROSO MULTI-TENANT
           .select(`
             *,
             patients (
@@ -517,21 +548,22 @@ class AppointmentDbService {
 
         if (!error && data) {
           const updated = this.mapDbToSession(data);
-          this.localFallbackSessions.set(updated.id, updated);
-          logger.info('SESSIONS', `[APPOINTMENT DB] Appointment ${id} atualizado no Supabase`);
+          this.getUserMap(userId).set(updated.id, updated);
+          logger.info('SESSIONS', `[APPOINTMENT DB] Appointment ${id} atualizado pelo usuário ${userId}`);
           return updated;
         }
 
         if (error) {
-          logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao atualizar appointment no Supabase', { id, error: error.message });
+          logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao atualizar appointment no Supabase', { id, userId, error: error.message });
         }
       } catch (err: any) {
-        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao atualizar appointment', { id, error: err.message });
+        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao atualizar appointment', { id, userId, error: err.message });
       }
     }
 
-    // Fallback local
-    const current = this.localFallbackSessions.get(id);
+    // Fallback local do respectivo usuário
+    const userMap = this.getUserMap(userId);
+    const current = userMap.get(id);
     if (current) {
       const updated: Session = {
         ...current,
@@ -551,7 +583,7 @@ class AppointmentDbService {
         whatsappReminderSent: input.whatsappReminderSent !== undefined ? input.whatsappReminderSent : current.whatsappReminderSent,
         whatsappReminderDate: now
       };
-      this.localFallbackSessions.set(id, updated);
+      userMap.set(id, updated);
       return updated;
     }
 
@@ -559,37 +591,55 @@ class AppointmentDbService {
   }
 
   /**
-   * Realiza exclusão lógica (soft-delete) ou física de agendamento na tabela appointments
+   * Realiza exclusão lógica (soft-delete) garantindo que o agendamento pertence ao userId
    */
-  public async deleteAppointment(id: string): Promise<boolean> {
-    if (!id) return false;
+  public async deleteAppointment(id: string, userId: string): Promise<boolean> {
+    if (!id || !userId) return false;
     const now = new Date().toISOString();
 
     if (this.supabase) {
       try {
+        // Verifica primeiro se o registro pertence ao usuário
+        const { data: existing } = await this.supabase
+          .from('appointments')
+          .select('id')
+          .eq('id', id)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (!existing) {
+          logger.warn('SESSIONS', `[APPOINTMENT DB 403] Tentativa de deletar appointment ${id} que não pertence a ${userId}`);
+          return false;
+        }
+
         const { error } = await this.supabase
           .from('appointments')
           .update({ deleted_at: now, updated_at: now })
-          .eq('id', id);
+          .eq('id', id)
+          .eq('user_id', userId);
 
         if (!error) {
-          this.localFallbackSessions.delete(id);
-          logger.info('SESSIONS', `[APPOINTMENT DB] Appointment ${id} removido (soft delete) no Supabase`);
+          this.getUserMap(userId).delete(id);
+          logger.info('SESSIONS', `[APPOINTMENT DB] Appointment ${id} removido (soft delete) pelo usuário ${userId}`);
           return true;
         }
 
-        logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao deletar appointment no Supabase', { id, error: error.message });
+        logger.error('SESSIONS', '[APPOINTMENT DB] Erro ao deletar appointment no Supabase', { id, userId, error: error.message });
       } catch (err: any) {
-        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao deletar appointment', { id, error: err.message });
+        logger.error('SESSIONS', '[APPOINTMENT DB] Exceção ao deletar appointment', { id, userId, error: err.message });
       }
     }
 
-    this.localFallbackSessions.delete(id);
-    return true;
+    const userMap = this.getUserMap(userId);
+    if (userMap.has(id)) {
+      userMap.delete(id);
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Atualiza diretamente o status do appointment no Supabase (usado pelos webhooks do WhatsApp)
+   * Atualização de status interna/pública utilizada pelo webhook da Meta (sem JWT de usuário)
    */
   public async updateAppointmentStatus(idOrSessionId: string, status: string): Promise<boolean> {
     if (!idOrSessionId) return false;
@@ -598,7 +648,6 @@ class AppointmentDbService {
 
     if (this.supabase) {
       try {
-        // Tenta atualizar diretamente por ID
         const { data, error } = await this.supabase
           .from('appointments')
           .update({ status: dbStatus, updated_at: now })
@@ -611,7 +660,6 @@ class AppointmentDbService {
           return true;
         }
 
-        // Se o idOrSessionId for um ID customizado (ex: ses-123...), tenta buscar também por token ou correlação
         const { error: err2 } = await this.supabase
           .from('appointments')
           .update({ status: dbStatus, updated_at: now })

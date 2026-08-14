@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Logo } from '../Brand/Logo';
 import { useApp } from '../../context/AppContext';
+import { authenticatedFetch } from '../../services/apiClient';
 import {
   ShieldCheck,
   TrendingUp,
@@ -110,8 +111,8 @@ export const AdminView: React.FC = () => {
     setIsLoadingEmails(true);
     try {
       const [auditRes, logsRes] = await Promise.all([
-        fetch('/api/email-audit?limit=100').then((r) => r.json()).catch(() => null),
-        fetch('/api/logs?limit=100').then((r) => r.json()).catch(() => null),
+        authenticatedFetch('/api/email-audit?limit=100').then((r) => r.json()).catch(() => null),
+        authenticatedFetch('/api/logs?limit=100').then((r) => r.json()).catch(() => null),
       ]);
 
       if (auditRes && auditRes.records) {

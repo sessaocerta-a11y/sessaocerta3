@@ -218,7 +218,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage(null);
 
     try {
-      const result = registerAccount({
+      const result = await registerAccount({
         name,
         email,
         password,
@@ -248,16 +248,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
 
-    const res = verifyAccountCode(email, verificationCodeInput);
-    if (res.success) {
-      // Dispara o e-mail de Boas-vindas
-      await sendEmailBackend(email, name || 'Profissional', undefined, 'welcome');
+    try {
+      const res = await verifyAccountCode(email, verificationCodeInput);
+      if (res.success) {
+        // Dispara o e-mail de Boas-vindas
+        await sendEmailBackend(email, name || 'Profissional', undefined, 'welcome');
+        setIsLoading(false);
+        onSuccessAuth();
+        onClose();
+      } else {
+        setIsLoading(false);
+        setErrorMessage(res.message || 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.');
+      }
+    } catch (err: any) {
       setIsLoading(false);
-      onSuccessAuth();
-      onClose();
-    } else {
-      setIsLoading(false);
-      setErrorMessage(res.message || 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.');
+      setErrorMessage(err.message || 'Erro ao verificar código.');
     }
   };
 
@@ -281,16 +286,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setTimeout(() => setCodeCopied(false), 2000);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateLogin()) return;
 
     setIsLoading(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
+    try {
+      const res = await loginWithCredentials(email, password);
       setIsLoading(false);
-      const res = loginWithCredentials(email, password);
       if (res.success) {
         onSuccessAuth();
         onClose();
@@ -300,7 +305,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       } else {
         setErrorMessage(res.message || 'Credenciais inválidas.');
       }
-    }, 500);
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err.message || 'Erro ao realizar login.');
+    }
   };
 
   const maskEmail = (str: string) => {
