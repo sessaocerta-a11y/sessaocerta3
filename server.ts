@@ -21,6 +21,7 @@ import {
 } from './src/services/whatsappWebhookService.js';
 import { logger } from './src/utils/logger.js';
 import { appointmentDbService } from './src/services/appointmentDbService.js';
+import { patientDbService } from './src/services/patientDbService.js';
 import { requireAuth, optionalAuth } from './src/middleware/authMiddleware.js';
 
 
@@ -202,6 +203,7 @@ Pendentes: ${pendingCount || 0}`,
     try {
       const { name, phone, crp } = req.body;
       const userId = req.userId!;
+      const token = req.authToken || '';
       const userEmail = req.userEmail || (req.user as any)?.email || '';
 
       await appointmentDbService.ensureUserRecord({
@@ -210,12 +212,12 @@ Pendentes: ${pendingCount || 0}`,
         name,
         phone,
         crp
-      });
+      }, token);
 
       return res.json({ success: true, userId, email: userEmail });
     } catch (error: any) {
       logger.error('AUTH', 'Erro ao sincronizar usuário autenticado', { error: error.message });
-      return res.status(500).json({ success: false, error: 'Erro ao sincronizar usuário' });
+      return res.status(500).json({ success: false, error: 'Erro ao sincronizar usuário', details: error.message });
     }
   });
 
@@ -458,14 +460,192 @@ Pendentes: ${pendingCount || 0}`,
   });
 
   // =========================================================================
+  // API Routes: CRUD OFICIAL DE PACIENTES (Tabela patients no Supabase via JWT)
+  // =========================================================================
+
+  // 1. Listar Pacientes do Usuário Autenticado (Isolamento via RLS e req.userId)
+  app.get('/api/patients', requireAuth, async (req, res) => {
+    try {
+      const userId = req.userId!;
+      const token = req.authToken || '';
+      const patients = await patientDbService.listPatients(token, userId);
+
+      return res.json({
+        success: true,
+        count: patients.length,
+        patients
+      });
+    } catch (error: any) {
+      logger.error('PATIENTS', 'Erro ao listar pacientes', { error: error.message, userId: req.userId });
+      return res.status(500).json({ success: false, error: 'Erro ao listar pacientes', details: error.message });
+    }
+  });
+
+  // 2. Criar Paciente no Supabase (Vinculado estritamente a req.userId)
+  app.post('/api/patients', requireAuth, async (req, res) => {
+    try {
+      const userId = req.userId!;
+      const token = req.authToken || '';
+      const {
+        name,
+        cpf,
+        birthDate,
+        phone,
+        email,
+        emergencyContactName,
+        emergencyContactPhone,
+        status,
+        attendanceType,
+        sessionPrice,
+        preferredSchedule,
+        initialAnamnesis,
+        city,
+        state,
+        neighborhood,
+        country,
+        notes
+      } = req.body;
+
+      if (!name || !name.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'O nome do paciente é obrigatório.'
+        });
+      }
+
+      // Garante que o usuário existe na tabela users
+      await appointmentDbService.ensureUserRecord({
+        id: userId,
+        email: req.userEmail || ''
+      }, token);
+
+      const createdPatient = await patientDbService.createPatient(token, userId, {
+        name: name.trim(),
+        cpf,
+        birthDate,
+        phone: phone || '',
+        email: email || '',
+        emergencyContactName: emergencyContactName || '',
+        emergencyContactPhone: emergencyContactPhone || '',
+        status: status || 'ativo',
+        attendanceType: attendanceType || 'presencial',
+        sessionPrice: sessionPrice !== undefined ? Number(sessionPrice) : 200,
+        preferredSchedule,
+        initialAnamnesis,
+        city,
+        state,
+        neighborhood,
+        country,
+        notes
+      });
+
+      return res.status(201).json({
+        success: true,
+        patient: createdPatient
+      });
+    } catch (error: any) {
+      logger.error('PATIENTS', 'Erro ao criar paciente', { error: error.message, userId: req.userId });
+      return res.status(500).json({ success: false, error: 'Erro ao criar paciente', details: error.message });
+    }
+  });
+
+  // 3. Obter Paciente por ID
+  app.get('/api/patients/:id', requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.userId!;
+      const token = req.authToken || '';
+
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'ID do paciente é obrigatório.' });
+      }
+
+      const patient = await patientDbService.getPatientById(token, userId, id);
+      if (!patient) {
+        return res.status(404).json({
+          success: false,
+          error: 'Paciente não encontrado ou não pertence a este profissional.'
+        });
+      }
+
+      return res.json({
+        success: true,
+        patient
+      });
+    } catch (error: any) {
+      logger.error('PATIENTS', `Erro ao buscar paciente ${req.params.id}`, { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao buscar paciente', details: error.message });
+    }
+  });
+
+  // 4. Atualizar Paciente (Proteção IDOR: isolamento por req.userId)
+  app.put('/api/patients/:id', requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.userId!;
+      const token = req.authToken || '';
+
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'ID do paciente é obrigatório.' });
+      }
+
+      const updated = await patientDbService.updatePatient(token, userId, id, req.body);
+      if (!updated) {
+        return res.status(403).json({
+          success: false,
+          error: 'Ação não permitida (403): O paciente informado não pertence ao seu usuário ou não existe.'
+        });
+      }
+
+      return res.json({
+        success: true,
+        patient: updated
+      });
+    } catch (error: any) {
+      logger.error('PATIENTS', `Erro ao atualizar paciente ${req.params.id}`, { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao atualizar paciente', details: error.message });
+    }
+  });
+
+  // 5. Excluir/Arquivar Paciente (Proteção IDOR: isolamento por req.userId)
+  app.delete('/api/patients/:id', requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.userId!;
+      const token = req.authToken || '';
+
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'ID do paciente é obrigatório.' });
+      }
+
+      const deleted = await patientDbService.deletePatient(token, userId, id);
+      if (!deleted) {
+        return res.status(403).json({
+          success: false,
+          error: 'Ação não permitida (403): O paciente informado não pertence ao seu usuário ou não existe.'
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Paciente removido com sucesso.'
+      });
+    } catch (error: any) {
+      logger.error('PATIENTS', `Erro ao excluir paciente ${req.params.id}`, { error: error.message });
+      return res.status(500).json({ success: false, error: 'Erro ao excluir paciente', details: error.message });
+    }
+  });
+
+  // =========================================================================
   // API Routes: CRUD OFICIAL DE APPOINTMENTS (Sessões / Agendamentos no Supabase)
   // =========================================================================
 
-  // 1. Listar Agendamentos (Isolamento estrito por req.userId)
+  // 1. Listar Agendamentos (Isolamento estrito por req.userId via JWT)
   app.get('/api/appointments', requireAuth, async (req, res) => {
     try {
       const userId = req.userId!;
-      const appointments = await appointmentDbService.getAppointments(userId);
+      const token = req.authToken || '';
+      const appointments = await appointmentDbService.getAppointments(token, userId);
       return res.json({
         success: true,
         count: appointments.length,
@@ -477,10 +657,11 @@ Pendentes: ${pendingCount || 0}`,
     }
   });
 
-  // 2. Criar Agendamento e disparar confirmação via WhatsApp (Vinculado a req.userId)
+  // 2. Criar Agendamento e disparar confirmação via WhatsApp (Vinculado a req.userId via JWT)
   app.post('/api/appointments', requireAuth, async (req, res) => {
     try {
       const userId = req.userId!;
+      const token = req.authToken || '';
       const {
         patientId,
         patientName,
@@ -511,8 +692,8 @@ Pendentes: ${pendingCount || 0}`,
         });
       }
 
-      // 1. Cria o agendamento no Supabase garantindo req.userId
-      const createdSession = await appointmentDbService.createAppointment({
+      // 1. Cria o agendamento no Supabase garantindo req.userId e token contextualizado
+      const createdSession = await appointmentDbService.createAppointment(token, userId, {
         patientId,
         patientName,
         patientPhone,
@@ -534,10 +715,11 @@ Pendentes: ${pendingCount || 0}`,
         userName,
         userPhone,
         whatsappReminderSent: false
-      }, userId);
+      });
 
       // 2. Disparo de confirmação via WhatsApp se telefone válido e habilitado
       let whatsappSent = false;
+      let whatsappError: string | undefined = undefined;
       const cleanPhone = (patientPhone || '').replace(/\D/g, '');
       const validPhone = cleanPhone.length >= 10;
 
@@ -557,11 +739,14 @@ Pendentes: ${pendingCount || 0}`,
 
           if (waResult.success) {
             whatsappSent = true;
-            await appointmentDbService.updateAppointment(createdSession.id, userId, { whatsappReminderSent: true });
+            await appointmentDbService.updateAppointment(token, userId, createdSession.id, { whatsappReminderSent: true });
             createdSession.whatsappReminderSent = true;
-            logger.info('SESSIONS', `Confirmação de agendamento enviada via WhatsApp para ${formattedPhone} (Sessão: ${createdSession.id})`);
+            logger.info('SESSIONS', `Confirmação de agendamento enviada via WhatsApp para ${formattedPhone} (Sessão UUID: ${createdSession.id})`);
+          } else {
+            whatsappError = 'Serviço do WhatsApp não confirmou entrega da mensagem.';
           }
         } catch (waErr: any) {
+          whatsappError = waErr.message;
           logger.warn('SESSIONS', 'Não foi possível enviar WhatsApp automático', { error: waErr.message });
         }
       }
@@ -569,11 +754,12 @@ Pendentes: ${pendingCount || 0}`,
       return res.status(201).json({
         success: true,
         session: createdSession,
-        whatsappSent
+        whatsappSent,
+        whatsappError
       });
     } catch (error: any) {
       logger.error('SESSIONS', 'Erro ao criar agendamento', { error: error.message });
-      return res.status(500).json({ success: false, error: 'Erro ao criar agendamento', details: error.message });
+      return res.status(500).json({ success: false, error: error.message || 'Erro ao criar agendamento' });
     }
   });
 
@@ -582,12 +768,13 @@ Pendentes: ${pendingCount || 0}`,
     try {
       const { id } = req.params;
       const userId = req.userId!;
+      const token = req.authToken || '';
 
       if (!id) {
         return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
       }
 
-      const updated = await appointmentDbService.updateAppointment(id, userId, req.body);
+      const updated = await appointmentDbService.updateAppointment(token, userId, id, req.body);
       if (!updated) {
         return res.status(403).json({
           success: false,
@@ -610,12 +797,13 @@ Pendentes: ${pendingCount || 0}`,
     try {
       const { id } = req.params;
       const userId = req.userId!;
+      const token = req.authToken || '';
 
       if (!id) {
         return res.status(400).json({ success: false, error: 'ID do agendamento é obrigatório.' });
       }
 
-      const deleted = await appointmentDbService.deleteAppointment(id, userId);
+      const deleted = await appointmentDbService.deleteAppointment(token, userId, id);
       if (!deleted) {
         return res.status(403).json({
           success: false,
@@ -752,13 +940,6 @@ Pendentes: ${pendingCount || 0}`,
       // Responder HTTP 200 com status EVENT_RECEIVED para evitar retentativas excessivas da Meta
       return res.status(200).json({ status: 'EVENT_RECEIVED' });
     }
-  });
-
-  // API Route: Consulta de Auditoria de E-mails Enviados
-  app.get('/api/email-audit', (req, res) => {
-    const limit = Number(req.query.limit) || 100;
-    const records = emailAuditDb.getAllRecords(limit);
-    res.json({ success: true, count: records.length, records });
   });
 
 export default app;

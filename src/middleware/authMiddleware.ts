@@ -8,9 +8,54 @@ declare global {
     interface Request {
       userId?: string;
       userEmail?: string;
+      authToken?: string;
       user?: User | { id: string; email?: string; [key: string]: any };
       supabaseClient?: SupabaseClient;
     }
+  }
+}
+
+/**
+ * Cria um cliente Supabase contextualizado com o token JWT do usuário.
+ * Repassa Authorization: Bearer <token> no header para que o PostgREST e PostgreSQL
+ * executem com auth.uid() = req.userId respeitando estritamente o RLS.
+ */
+export function getScopedSupabaseClient(token: string): SupabaseClient {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder';
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    }
+  });
+}
+
+/**
+ * Cliente Supabase com permissões de Service Role para operações estritamente administrativas de backend.
+ */
+export function getAdminSupabaseClient(): SupabaseClient | null {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  try {
+    return createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false
+      }
+    });
+  } catch (e) {
+    return null;
   }
 }
 
@@ -72,7 +117,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const testUserId = token.replace('test-jwt-token-', '');
     req.userId = testUserId;
     req.userEmail = `${testUserId}@sessaocerta.shop`;
+    req.authToken = token;
     req.user = { id: testUserId, email: req.userEmail };
+    req.supabaseClient = getScopedSupabaseClient(token);
     return next();
   }
 
@@ -90,7 +137,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         if (payload.sub) {
           req.userId = payload.sub;
           req.userEmail = payload.email;
+          req.authToken = token;
           req.user = { id: payload.sub, email: payload.email, ...payload };
+          req.supabaseClient = getScopedSupabaseClient(token);
           return next();
         }
       }
@@ -120,10 +169,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // Injeta identificadores seguros garantidos pelo Supabase Auth
+    // Injeta identificadores seguros garantidos pelo Supabase Auth e o cliente contextual
     req.userId = user.id;
     req.userEmail = user.email;
+    req.authToken = token;
     req.user = user;
+    req.supabaseClient = getScopedSupabaseClient(token);
 
     return next();
   } catch (err: any) {
@@ -138,7 +189,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
 /**
  * Middleware opcional de autenticação
- * Se houver token válido, preenche req.userId. Se não, prossegue sem erro.
+ * Se houver token válido, preenche req.userId e req.supabaseClient. Se não, prossegue sem erro.
  */
 export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -153,7 +204,9 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
     const testUserId = token.replace('test-jwt-token-', '');
     req.userId = testUserId;
     req.userEmail = `${testUserId}@sessaocerta.shop`;
+    req.authToken = token;
     req.user = { id: testUserId, email: req.userEmail };
+    req.supabaseClient = getScopedSupabaseClient(token);
     return next();
   }
 
@@ -165,7 +218,9 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
     if (user) {
       req.userId = user.id;
       req.userEmail = user.email;
+      req.authToken = token;
       req.user = user;
+      req.supabaseClient = getScopedSupabaseClient(token);
     }
   } catch {
     // Ignora para auth opcional

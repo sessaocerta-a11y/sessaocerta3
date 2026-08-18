@@ -214,11 +214,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Carregar Agendamentos Oficiais do Supabase e Sincronizar Sessão Supabase Auth
+  // Carregar Pacientes e Agendamentos Oficiais do Supabase via Backend Autenticado
   useEffect(() => {
     let isMounted = true;
 
-    const initAuthAndAppointments = async () => {
+    const initDataAndAuth = async () => {
       try {
         if (supabase) {
           const { data: { session } } = await supabase.auth.getSession();
@@ -226,7 +226,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const authEmail = session.user.email.toLowerCase();
             setCurrentAccountEmail(authEmail);
 
-            // Sincroniza usuário na tabela users se necessário
+            // Sincroniza usuário na tabela users
             const meta = session.user.user_metadata || {};
             authenticatedFetch('/api/auth/sync-user', {
               method: 'POST',
@@ -239,20 +239,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // Busca agendamentos do backend autenticado
-        const res = await authenticatedFetch('/api/appointments');
-        if (res.ok && isMounted) {
-          const data = await res.json();
-          if (data.success && Array.isArray(data.appointments)) {
-            setSessions(data.appointments);
+        // Busca simultânea de pacientes e agendamentos persistidos
+        const [patientsRes, apptsRes] = await Promise.allSettled([
+          authenticatedFetch('/api/patients'),
+          authenticatedFetch('/api/appointments')
+        ]);
+
+        if (patientsRes.status === 'fulfilled' && patientsRes.value.ok && isMounted) {
+          const pData = await patientsRes.value.json();
+          if (pData.success && Array.isArray(pData.patients)) {
+            setPatients(pData.patients);
+          }
+        }
+
+        if (apptsRes.status === 'fulfilled' && apptsRes.value.ok && isMounted) {
+          const aData = await apptsRes.value.json();
+          if (aData.success && Array.isArray(aData.appointments)) {
+            setSessions(aData.appointments);
           }
         }
       } catch (err) {
-        console.warn('[APPOINTMENTS INIT ERROR] Não foi possível carregar agendamentos:', err);
+        console.warn('[DATA INIT ERROR] Erro ao sincronizar dados com Supabase:', err);
       }
     };
 
-    initAuthAndAppointments();
+    initDataAndAuth();
 
     // Listener para mudanças de estado de autenticação no Supabase Auth
     let authListener: { subscription: { unsubscribe: () => void } } | null = null;
@@ -264,16 +275,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setCurrentAccountEmail(authEmail);
           
           try {
-            const res = await authenticatedFetch('/api/appointments');
-            if (res.ok) {
-              const apptData = await res.json();
-              if (apptData.success && Array.isArray(apptData.appointments)) {
-                setSessions(apptData.appointments);
+            const [pRes, aRes] = await Promise.allSettled([
+              authenticatedFetch('/api/patients'),
+              authenticatedFetch('/api/appointments')
+            ]);
+
+            if (pRes.status === 'fulfilled' && pRes.value.ok) {
+              const pData = await pRes.value.json();
+              if (pData.success && Array.isArray(pData.patients)) {
+                setPatients(pData.patients);
+              }
+            }
+
+            if (aRes.status === 'fulfilled' && aRes.value.ok) {
+              const aData = await aRes.value.json();
+              if (aData.success && Array.isArray(aData.appointments)) {
+                setSessions(aData.appointments);
               }
             }
           } catch (e) {}
         } else if (event === 'SIGNED_OUT') {
-          // Manter estado limpo no logout
+          // Limpa estado no logout
         }
       });
       authListener = data;
@@ -452,13 +474,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Patient actions
   const addPatient = (patientData: Omit<Patient, 'id' | 'createdAt'>): Patient => {
+    const tempId = `pat-${Date.now()}`;
     const newPatient: Patient = {
       ...patientData,
-      id: `pat-${Date.now()}`,
+      id: tempId,
       createdAt: new Date().toISOString().split('T')[0],
     };
+    
+    // Atualização otimista
     setPatients((prev) => [newPatient, ...prev]);
-    addToast(`Paciente ${newPatient.name} cadastrado(a) com sucesso!`);
+    addToast(`Cadastrando paciente ${newPatient.name}...`, 'info');
+
+    // Persistência real no Supabase via API backend
+    authenticatedFetch('/api/patients', {
+      method: 'POST',
+      body: JSON.stringify(patientData)
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success && data.patient) {
+          // Atualiza com o UUID real definitivo do Supabase
+          setPatients((prev) =>
+            prev.map((p) => (p.id === tempId ? { ...p, ...data.patient } : p))
+          );
+          addToast(`Paciente ${data.patient.name} salvo com sucesso no banco de dados!`, 'success');
+        } else {
+          // Rollback em caso de erro
+          setPatients((prev) => prev.filter((p) => p.id !== tempId));
+          const errMsg = data.error || data.details || 'Falha ao persistir paciente no Supabase.';
+          addToast(`Erro: ${errMsg}`, 'error');
+        }
+      })
+      .catch((err) => {
+        console.error('[PATIENT CREATE API ERROR]', err);
+        setPatients((prev) => prev.filter((p) => p.id !== tempId));
+        addToast(`Erro de rede ao salvar paciente: ${err.message}`, 'error');
+      });
+
     return newPatient;
   };
 
@@ -547,6 +599,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     addToast(changeMessage);
+
+    // Persistência no Supabase via API backend
+    authenticatedFetch(`/api/patients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(patientData)
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          addToast(`Aviso: ${data.error || 'Não foi possível persistir alteração no banco.'}`, 'warning');
+        }
+      })
+      .catch((err) => {
+        console.error('[PATIENT UPDATE API ERROR]', err);
+      });
   };
 
   const deletePatient = (id: string, userResponsible?: string) => {
@@ -590,6 +657,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.error('Failed to write administrative audit log:', e);
     }
+
+    addToast(`Paciente ${patient.name} removido.`, 'info');
+
+    // Persistência no Supabase via API backend
+    authenticatedFetch(`/api/patients/${id}`, {
+      method: 'DELETE'
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          addToast(`Aviso ao excluir no banco: ${data.error || 'Erro na exclusão.'}`, 'warning');
+        }
+      })
+      .catch((err) => {
+        console.error('[PATIENT DELETE API ERROR]', err);
+      });
   };
 
   const getPatientById = (id: string) => {
@@ -606,7 +689,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Atualização otimista imediata na UI
     setSessions((prev) => [newSession, ...prev]);
-    addToast(`Sessão agendada para ${newSession.patientName} em ${newSession.date} às ${newSession.startTime}!`);
+    addToast(`Agendando sessão para ${newSession.patientName}...`, 'info');
 
     // Obter dados do paciente para enriquecimento de telefone e e-mail
     const patient = patients.find(
@@ -625,17 +708,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sendWhatsApp: true
       })
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.session) {
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success && data.session) {
           // Atualiza o ID temporário para o UUID real persistido no Supabase
           setSessions((prev) =>
             prev.map((s) => (s.id === tempId ? { ...s, ...data.session } : s))
           );
+          if (data.whatsappSent) {
+            addToast(`Sessão confirmada e enviada via WhatsApp para ${data.session.patientName}!`, 'success');
+          } else {
+            addToast(`Sessão agendada com sucesso para ${data.session.patientName}!`, 'success');
+          }
+        } else {
+          // Rollback: remove a sessão da memória e avisa o usuário do erro real
+          setSessions((prev) => prev.filter((s) => s.id !== tempId));
+          const errMsg = data.error || data.details || 'Falha ao salvar agendamento no banco de dados.';
+          addToast(`Erro: ${errMsg}`, 'error');
         }
       })
       .catch((err) => {
         console.error('[APPOINTMENTS CREATE API ERROR]', err);
+        setSessions((prev) => prev.filter((s) => s.id !== tempId));
+        addToast(`Erro de conexão ao salvar agendamento: ${err.message}`, 'error');
       });
 
     return newSession;
