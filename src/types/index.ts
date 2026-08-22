@@ -78,16 +78,12 @@ export interface UserAccount {
   id: string;
   name: string;
   email: string;
-  password: string;
   phone: string;
   crp: string;
   isConfirmed: boolean;
-  verificationCode?: string;
-  codeCreatedAt?: number;
-  verificationAttempts?: number;
-  confirmedAt?: string;
   isMasterAdmin?: boolean;
   createdAt: string;
+  confirmedAt?: string;
   profile: PsychologistProfile;
   patients: Patient[];
   sessions: Session[];

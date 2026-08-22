@@ -23,7 +23,7 @@ interface ToastMessage {
 }
 
 interface AppContextType {
-  // Real User Authentication & Account Registry
+  // Real User Authentication & Account Registry (Supabase Auth Source of Truth)
   accounts: UserAccount[];
   currentAccountEmail: string | null;
   registerAccount: (data: {
@@ -32,16 +32,23 @@ interface AppContextType {
     password: string;
     phone: string;
     crp: string;
-  }) => Promise<{ verificationCode: string; email: string }>;
+  }) => Promise<{
+    success: boolean;
+    email: string;
+    requiresEmailConfirmation?: boolean;
+    user?: any;
+    session?: any;
+    message?: string;
+  }>;
   verifyAccountCode: (email: string, code: string) => Promise<{ success: boolean; message?: string }>;
-  resendVerificationCode: (email: string) => string;
+  resendVerificationCode: (email: string) => Promise<{ success: boolean; message?: string }>;
   loginWithCredentials: (
     email: string,
     password: string
   ) => Promise<{ success: boolean; requiresVerification?: boolean; message?: string }>;
   logoutAccount: () => Promise<void>;
-  requestPasswordReset: (email: string) => { success: boolean; code?: string; message?: string };
-  confirmPasswordReset: (email: string, code: string, newPassword: string) => { success: boolean; message?: string };
+  requestPasswordReset: (email: string) => Promise<{ success: boolean; message?: string }>;
+  confirmPasswordReset: (password: string) => Promise<{ success: boolean; message?: string }>;
 
   // Role-Based Access Control (RBAC)
   userRole: 'professional' | 'admin';
@@ -103,203 +110,136 @@ interface AppContextType {
   clearPatientsAndSessions: () => void;
 }
 
-const defaultPreSeededAccounts: UserAccount[] = [
-  {
-    id: 'acc-master-admin',
-    name: 'Administrador Sessão Certa',
-    email: 'sessaocerta@gmail.com',
-    password: 'SC_Admin@2026!',
-    phone: '',
-    crp: 'CRP-MASTER/01',
-    isConfirmed: true,
-    isMasterAdmin: true,
-    createdAt: '2026-01-01',
-    profile: {
-      ...defaultPsychologistProfile,
-      id: 'psi-master',
-      name: 'Administrador Sessão Certa',
-      email: 'sessaocerta@gmail.com',
-      crp: 'CRP-MASTER/01',
-      phone: '',
-      isMasterAdmin: true,
-      isAdmin: true,
-      role: 'Administrador SaaS'
-    },
-    patients: [],
-    sessions: []
-  },
-  {
-    id: 'acc-admin-mvp',
-    name: 'Administrador SaaS',
-    email: 'admin@sessaocerta.com.br',
-    password: 'SC_Admin@2026!',
-    phone: '',
-    crp: 'CRP-ADMIN/01',
-    isConfirmed: true,
-    isMasterAdmin: true,
-    createdAt: '2026-01-01',
-    profile: {
-      ...defaultPsychologistProfile,
-      id: 'psi-admin',
-      name: 'Administrador SaaS',
-      email: 'admin@sessaocerta.com.br',
-      crp: 'CRP-ADMIN/01',
-      phone: '',
-      isMasterAdmin: true,
-      isAdmin: true,
-      role: 'Administrador SaaS'
-    },
-    patients: [],
-    sessions: []
-  }
-];
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Accounts Registry
-  const [accounts, setAccounts] = useState<UserAccount[]>(() => {
-    const saved = localStorage.getItem('sessao_certa_user_accounts');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Filter out deleted demo accounts (Juliana) and sync pre-seeded admin passwords
-          return parsed
-            .filter((acc: UserAccount) => acc.email.toLowerCase() !== 'juliana@psicologia.com' && acc.id !== 'acc-demo-juliana')
-            .map((acc: UserAccount) => {
-              const preSeeded = defaultPreSeededAccounts.find((d) => d.email.toLowerCase() === acc.email.toLowerCase());
-              if (preSeeded && (acc.email.toLowerCase() === 'sessaocerta@gmail.com' || acc.email.toLowerCase() === 'admin@sessaocerta.com.br')) {
-                return { ...acc, password: preSeeded.password };
-              }
-              return acc;
-            });
-        }
-      } catch (e) {
-        console.error('Error parsing saved accounts', e);
-      }
-    }
-    return defaultPreSeededAccounts;
-  });
+  // Clear any legacy localStorage plain-text passwords or accounts on mount
+  useEffect(() => {
+    try {
+      localStorage.removeItem('sessao_certa_user_accounts');
+    } catch {}
+  }, []);
+
+  // Accounts Registry (In-memory representation for admin views if needed, without passwords)
+  const [accounts, setAccounts] = useState<UserAccount[]>([]);
 
   // Current Logged-in Account Email
-  const [currentAccountEmail, setCurrentAccountEmail] = useState<string | null>(() => {
-    const saved = localStorage.getItem('sessao_certa_current_email');
-    return saved || null;
-  });
+  const [currentAccountEmail, setCurrentAccountEmail] = useState<string | null>(null);
 
-  // Current Active Account Object
-  const currentAccount = accounts.find(
-    (acc) => acc.email.toLowerCase() === (currentAccountEmail || '').toLowerCase()
-  ) || null;
+  // Active Profile (synced with Supabase user metadata)
+  const [profile, setProfile] = useState<PsychologistProfile>(defaultPsychologistProfile);
 
-  // Load profile from current account or saved/default
-  const [profile, setProfile] = useState<PsychologistProfile>(() => {
-    if (currentAccount) return currentAccount.profile;
-    const saved = localStorage.getItem('sessao_certa_profile');
-    return saved ? JSON.parse(saved) : defaultPsychologistProfile;
-  });
+  // Patients (authenticated user state)
+  const [patients, setPatients] = useState<Patient[]>([]);
 
-  // Load patients from current account or saved/empty
-  const [patients, setPatients] = useState<Patient[]>(() => {
-    if (currentAccount) return currentAccount.patients || [];
-    const saved = localStorage.getItem('sessao_certa_patients');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // Sessions (authenticated user state)
+  const [sessions, setSessions] = useState<Session[]>([]);
 
-  // Load sessions from current account or saved/empty
-  const [sessions, setSessions] = useState<Session[]>(() => {
-    if (currentAccount) return currentAccount.sessions || [];
-    const saved = localStorage.getItem('sessao_certa_sessions');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Carregar Pacientes e Agendamentos Oficiais do Supabase via Backend Autenticado
+  // Sincronizar Sessão Oficial do Supabase Auth e Carregar Dados
   useEffect(() => {
     let isMounted = true;
 
-    const initDataAndAuth = async () => {
+    const initAuthAndData = async () => {
       try {
-        if (supabase) {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.user?.email && isMounted) {
-            const authEmail = session.user.email.toLowerCase();
-            setCurrentAccountEmail(authEmail);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.email && isMounted) {
+          const authEmail = session.user.email.toLowerCase();
+          setCurrentAccountEmail(authEmail);
 
-            // Sincroniza usuário na tabela users
-            const meta = session.user.user_metadata || {};
-            authenticatedFetch('/api/auth/sync-user', {
-              method: 'POST',
-              body: JSON.stringify({
-                name: meta.name || meta.full_name || 'Profissional',
-                phone: meta.phone || meta.whatsapp || '',
-                crp: meta.crp || ''
-              })
-            }).catch(() => {});
+          const meta = session.user.user_metadata || {};
+          setProfile((prev) => ({
+            ...prev,
+            id: session.user.id,
+            name: meta.name || meta.full_name || prev.name,
+            email: authEmail,
+            phone: meta.phone || meta.whatsapp || prev.phone,
+            crp: meta.crp || prev.crp,
+            isMasterAdmin: authEmail === 'sessaocerta@gmail.com' || authEmail === 'admin@sessaocerta.com.br',
+            isAdmin: authEmail === 'sessaocerta@gmail.com' || authEmail === 'admin@sessaocerta.com.br'
+          }));
+
+          // Sincroniza usuário na tabela users do backend
+          authenticatedFetch('/api/auth/sync-user', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: meta.name || meta.full_name || 'Profissional',
+              phone: meta.phone || meta.whatsapp || '',
+              crp: meta.crp || ''
+            })
+          }).catch(() => {});
+
+          // Busca simultânea de pacientes e agendamentos persistidos
+          const [patientsRes, apptsRes] = await Promise.allSettled([
+            authenticatedFetch('/api/patients'),
+            authenticatedFetch('/api/appointments')
+          ]);
+
+          if (patientsRes.status === 'fulfilled' && patientsRes.value.ok && isMounted) {
+            const pData = await patientsRes.value.json();
+            if (pData.success && Array.isArray(pData.patients)) {
+              setPatients(pData.patients);
+            }
           }
-        }
 
-        // Busca simultânea de pacientes e agendamentos persistidos
-        const [patientsRes, apptsRes] = await Promise.allSettled([
-          authenticatedFetch('/api/patients'),
-          authenticatedFetch('/api/appointments')
-        ]);
-
-        if (patientsRes.status === 'fulfilled' && patientsRes.value.ok && isMounted) {
-          const pData = await patientsRes.value.json();
-          if (pData.success && Array.isArray(pData.patients)) {
-            setPatients(pData.patients);
-          }
-        }
-
-        if (apptsRes.status === 'fulfilled' && apptsRes.value.ok && isMounted) {
-          const aData = await apptsRes.value.json();
-          if (aData.success && Array.isArray(aData.appointments)) {
-            setSessions(aData.appointments);
+          if (apptsRes.status === 'fulfilled' && apptsRes.value.ok && isMounted) {
+            const aData = await apptsRes.value.json();
+            if (aData.success && Array.isArray(aData.appointments)) {
+              setSessions(aData.appointments);
+            }
           }
         }
       } catch (err) {
-        console.warn('[DATA INIT ERROR] Erro ao sincronizar dados com Supabase:', err);
+        console.warn('[AUTH INIT ERROR] Erro ao sincronizar sessão inicial com Supabase:', err);
       }
     };
 
-    initDataAndAuth();
+    initAuthAndData();
 
-    // Listener para mudanças de estado de autenticação no Supabase Auth
-    let authListener: { subscription: { unsubscribe: () => void } } | null = null;
-    if (supabase) {
-      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!isMounted) return;
-        if (event === 'SIGNED_IN' && session?.user?.email) {
-          const authEmail = session.user.email.toLowerCase();
-          setCurrentAccountEmail(authEmail);
-          
-          try {
-            const [pRes, aRes] = await Promise.allSettled([
-              authenticatedFetch('/api/patients'),
-              authenticatedFetch('/api/appointments')
-            ]);
+    // Listener para mudanças de autenticação do Supabase Auth
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return;
+      if (event === 'SIGNED_IN' && session?.user?.email) {
+        const authEmail = session.user.email.toLowerCase();
+        setCurrentAccountEmail(authEmail);
+        const meta = session.user.user_metadata || {};
+        setProfile((prev) => ({
+          ...prev,
+          id: session.user.id,
+          name: meta.name || meta.full_name || prev.name,
+          email: authEmail,
+          phone: meta.phone || meta.whatsapp || prev.phone,
+          crp: meta.crp || prev.crp,
+          isMasterAdmin: authEmail === 'sessaocerta@gmail.com' || authEmail === 'admin@sessaocerta.com.br',
+          isAdmin: authEmail === 'sessaocerta@gmail.com' || authEmail === 'admin@sessaocerta.com.br'
+        }));
 
-            if (pRes.status === 'fulfilled' && pRes.value.ok) {
-              const pData = await pRes.value.json();
-              if (pData.success && Array.isArray(pData.patients)) {
-                setPatients(pData.patients);
-              }
+        try {
+          const [pRes, aRes] = await Promise.allSettled([
+            authenticatedFetch('/api/patients'),
+            authenticatedFetch('/api/appointments')
+          ]);
+
+          if (pRes.status === 'fulfilled' && pRes.value.ok && isMounted) {
+            const pData = await pRes.value.json();
+            if (pData.success && Array.isArray(pData.patients)) {
+              setPatients(pData.patients);
             }
+          }
 
-            if (aRes.status === 'fulfilled' && aRes.value.ok) {
-              const aData = await aRes.value.json();
-              if (aData.success && Array.isArray(aData.appointments)) {
-                setSessions(aData.appointments);
-              }
+          if (aRes.status === 'fulfilled' && aRes.value.ok && isMounted) {
+            const aData = await aRes.value.json();
+            if (aData.success && Array.isArray(aData.appointments)) {
+              setSessions(aData.appointments);
             }
-          } catch (e) {}
-        } else if (event === 'SIGNED_OUT') {
-          // Limpa estado no logout
-        }
-      });
-      authListener = data;
-    }
+          }
+        } catch (e) {}
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentAccountEmail(null);
+        setProfile(defaultPsychologistProfile);
+        setPatients([]);
+        setSessions([]);
+      }
+    });
 
     return () => {
       isMounted = false;
@@ -307,76 +247,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authListener.subscription.unsubscribe();
       }
     };
-  }, [currentAccountEmail]);
-
-  // Keep state synchronized whenever currentAccountEmail changes
-  useEffect(() => {
-    if (currentAccount) {
-      setProfile(currentAccount.profile);
-      setPatients(currentAccount.patients || []);
-      if (currentAccount.sessions && currentAccount.sessions.length > 0) {
-        setSessions(currentAccount.sessions);
-      }
-    }
-  }, [currentAccountEmail]);
-
-  // Helper for safe JSON stringification to prevent cyclic structure errors
-  const safeJsonStringify = (data: any): string => {
-    const cache = new WeakSet();
-    try {
-      return JSON.stringify(data, (key, value) => {
-        if (typeof value === 'object' && value !== null) {
-          if (cache.has(value)) return undefined;
-          cache.add(value);
-        }
-        return value;
-      });
-    } catch {
-      return '[]';
-    }
-  };
-
-  // Persist accounts to LocalStorage whenever accounts list changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('sessao_certa_user_accounts', safeJsonStringify(accounts));
-    } catch (e) {
-      console.warn('Failed to persist accounts to localStorage:', e);
-    }
-  }, [accounts]);
-
-  // Persist currentAccountEmail to LocalStorage
-  useEffect(() => {
-    if (currentAccountEmail) {
-      localStorage.setItem('sessao_certa_current_email', currentAccountEmail);
-    } else {
-      localStorage.removeItem('sessao_certa_current_email');
-    }
-  }, [currentAccountEmail]);
-
-  // Sync active changes (profile, patients, sessions) into the accounts state
-  useEffect(() => {
-    if (!currentAccountEmail) return;
-    setAccounts((prev) => {
-      let isChanged = false;
-      const updated = prev.map((acc) => {
-        if (acc.email.toLowerCase() === currentAccountEmail.toLowerCase()) {
-          if (acc.profile === profile && acc.patients === patients && acc.sessions === sessions) {
-            return acc;
-          }
-          isChanged = true;
-          return {
-            ...acc,
-            profile,
-            patients,
-            sessions
-          };
-        }
-        return acc;
-      });
-      return isChanged ? updated : prev;
-    });
-  }, [profile, patients, sessions, currentAccountEmail]);
+  }, []);
 
   // Check if current user account is a SaaS Master Admin
   const isMasterAdmin = Boolean(
@@ -423,6 +294,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeLiveSession, setActiveLiveSession] = useState<Session | null>(null);
   const [whatsAppModalSession, setWhatsAppModalSession] = useState<Session | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Helper for safe JSON stringification
+  const safeJsonStringify = (data: any): string => {
+    const cache = new WeakSet();
+    try {
+      return JSON.stringify(data, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) return undefined;
+          cache.add(value);
+        }
+        return value;
+      });
+    } catch {
+      return '[]';
+    }
+  };
 
   // Sync to LocalStorage
   useEffect(() => {
@@ -903,7 +790,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodeURIComponent(msg)}`;
   };
 
-  // 1. Register Account com Supabase Auth
+  // 1. Register Account com Supabase Auth (Única fonte de verdade)
   const registerAccount = async (data: {
     name: string;
     email: string;
@@ -912,332 +799,252 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     crp: string;
   }) => {
     const emailLower = data.email.trim().toLowerCase();
-    const existing = accounts.find((acc) => acc.email.toLowerCase() === emailLower);
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const now = Date.now();
 
-    // Criação no Supabase Auth
-    if (supabase) {
-      try {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: emailLower,
-          password: data.password,
-          options: {
-            data: {
-              name: data.name,
-              phone: data.phone,
-              crp: data.crp || 'CRP Registrado'
-            }
-          }
-        });
-
-        if (signUpError && !signUpError.message.includes('already registered')) {
-          console.warn('[SUPABASE AUTH SIGNUP WARN]', signUpError.message);
-        }
-      } catch (err: any) {
-        console.warn('[SUPABASE AUTH SIGNUP EXCEPTION]', err.message);
-      }
-    }
-
-    if (existing) {
-      if (existing.isConfirmed) {
-        throw new Error(`Já existe uma conta cadastrada com o e-mail '${emailLower}'. Por favor, faça login ou recupere sua senha.`);
-      } else {
-        setAccounts((prev) =>
-          prev.map((acc) =>
-            acc.email.toLowerCase() === emailLower
-              ? {
-                  ...acc,
-                  verificationCode: code,
-                  codeCreatedAt: now,
-                  verificationAttempts: 0,
-                  password: data.password,
-                  name: data.name,
-                  phone: data.phone,
-                  crp: data.crp || 'CRP Registrado'
-                }
-              : acc
-          )
-        );
-        return { verificationCode: code, email: emailLower };
-      }
-    }
-
-    const newAccount: UserAccount = {
-      id: `acc-${Date.now()}`,
-      name: data.name,
+    // Chamada oficial e mandatória ao Supabase Auth
+    const { data: authData, error: signUpError } = await supabase.auth.signUp({
       email: emailLower,
       password: data.password,
-      phone: data.phone,
-      crp: data.crp || 'CRP Registrado',
-      isConfirmed: false,
-      verificationCode: code,
-      codeCreatedAt: now,
-      verificationAttempts: 0,
-      createdAt: new Date().toISOString(),
-      profile: {
-        id: `psi-${Date.now()}`,
+      options: {
+        data: {
+          name: data.name.trim(),
+          phone: data.phone.trim(),
+          crp: data.crp?.trim() || 'CRP Registrado'
+        }
+      }
+    });
+
+    // Se o Supabase retornar erro: interromper imediatamente
+    if (signUpError) {
+      const msg = signUpError.message || '';
+      if (
+        msg.toLowerCase().includes('already registered') ||
+        msg.toLowerCase().includes('user already exists') ||
+        (signUpError as any).status === 422
+      ) {
+        throw new Error(`Já existe uma conta cadastrada com o e-mail '${emailLower}'. Por favor, faça login ou recupere sua senha.`);
+      }
+      throw new Error(`Erro no Supabase Auth: ${msg}`);
+    }
+
+    if (!authData?.user) {
+      throw new Error('Não foi possível registrar o usuário no Supabase Auth. Verifique os dados e tente novamente.');
+    }
+
+    const hasSession = Boolean(authData.session);
+    const requiresEmailConfirmation = !hasSession && !authData.user.confirmed_at && !authData.user.email_confirmed_at;
+
+    if (authData.session) {
+      setCurrentAccountEmail(emailLower);
+      setProfile((prev) => ({
+        ...prev,
+        id: authData.user.id,
         name: data.name,
         email: emailLower,
-        crp: data.crp || 'CRP Registrado',
-        specialty: 'Psicologia Clínica',
         phone: data.phone,
-        sessionDefaultPrice: 180,
-        sessionDefaultDuration: 50,
-        clinicAddress: '',
-        pixKey: emailLower,
-        whatsappTemplate: 'Olá, {nome}! Lembrete da sua sessão de psicologia agendada para amanhã, dia {data} às {horario}. Confirmamos seu atendimento? {link_online}',
-        isMasterAdmin: false,
-        isAdmin: false,
-        role: 'Psicólogo(a)'
-      },
-      patients: [],
-      sessions: []
-    };
+        crp: data.crp || 'CRP Registrado'
+      }));
 
-    setAccounts((prev) => [...prev, newAccount]);
-    return { verificationCode: code, email: emailLower };
+      // Sincroniza dados com backend
+      authenticatedFetch('/api/auth/sync-user', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          crp: data.crp || 'CRP Registrado'
+        })
+      }).catch((e) => console.warn('[SYNC USER WARN]', e));
+    }
+
+    return {
+      success: true,
+      email: emailLower,
+      user: authData.user,
+      session: authData.session,
+      requiresEmailConfirmation,
+      message: requiresEmailConfirmation
+        ? `Cadastro criado com sucesso! Enviamos um e-mail de confirmação para ${emailLower}. Verifique sua caixa de entrada.`
+        : 'Cadastro realizado com sucesso!'
+    };
   };
 
-  // 2. Verify Account Code
+  // 2. Verify Account Code com Supabase Auth
   const verifyAccountCode = async (email: string, code: string) => {
     const emailLower = email.trim().toLowerCase();
     const cleanCode = code.trim();
-    const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
 
-    if (!acc) {
-      return { success: false, message: 'Conta não encontrada para este e-mail.' };
-    }
-
-    if (acc.isConfirmed) {
-      setCurrentAccountEmail(emailLower);
-      setProfile(acc.profile);
-      setPatients(acc.patients || []);
-      setSessions(acc.sessions || []);
-      return { success: true };
-    }
-
-    // Check expiration (10 minutes = 600,000 ms)
-    const TEN_MINUTES_MS = 10 * 60 * 1000;
-    if (acc.codeCreatedAt && Date.now() - acc.codeCreatedAt > TEN_MINUTES_MS) {
-      return {
-        success: false,
-        expired: true,
-        message: 'Seu código expirou. Clique abaixo para gerar um novo código.'
-      };
-    }
-
-    // Check attempt limits (max 5 attempts)
-    const attempts = acc.verificationAttempts || 0;
-    if (attempts >= 5) {
-      return {
-        success: false,
-        rateLimited: true,
-        message: 'Número máximo de tentativas excedido. Solicite um novo código.'
-      };
-    }
-
-    // Validate Code
-    if (acc.verificationCode === cleanCode) {
-      const nowIso = new Date().toISOString();
-      const updatedAccounts = accounts.map((a) => {
-        if (a.email.toLowerCase() === emailLower) {
-          return {
-            ...a,
-            isConfirmed: true,
-            confirmedAt: nowIso,
-            verificationCode: undefined,
-            codeCreatedAt: undefined,
-            verificationAttempts: 0
-          };
-        }
-        return a;
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: emailLower,
+        token: cleanCode,
+        type: 'signup'
       });
 
-      setAccounts(updatedAccounts);
-      setCurrentAccountEmail(emailLower);
-      setProfile(acc.profile);
-      setPatients(acc.patients || []);
-      setSessions(acc.sessions || []);
-
-      // Tenta login no Supabase Auth para emitir JWT
-      if (supabase && acc.password) {
-        try {
-          const { data: authData } = await supabase.auth.signInWithPassword({
-            email: emailLower,
-            password: acc.password
-          });
-
-          if (authData?.user?.id) {
-            await authenticatedFetch('/api/auth/sync-user', {
-              method: 'POST',
-              body: JSON.stringify({
-                name: acc.name,
-                phone: acc.phone,
-                crp: acc.crp
-              })
-            }).catch(() => {});
-          }
-        } catch (e) {}
-      }
-
-      addToast('E-mail verificado e conta ativada com sucesso!', 'success');
-      return { success: true };
-    }
-
-    // Increment failed attempts
-    setAccounts((prev) =>
-      prev.map((a) =>
-        a.email.toLowerCase() === emailLower
-          ? { ...a, verificationAttempts: (a.verificationAttempts || 0) + 1 }
-          : a
-      )
-    );
-
-    return {
-      success: false,
-      message: 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.'
-    };
-  };
-
-  // 3. Resend Verification Code
-  const resendVerificationCode = (email: string) => {
-    const emailLower = email.trim().toLowerCase();
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const now = Date.now();
-
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.email.toLowerCase() === emailLower
-          ? {
-              ...acc,
-              verificationCode: newCode,
-              codeCreatedAt: now,
-              verificationAttempts: 0
-            }
-          : acc
-      )
-    );
-    addToast(`Novo código enviado para seu e-mail!`, 'info');
-    return newCode;
-  };
-
-  // 4. Login With Credentials (com Supabase Auth Real)
-  const loginWithCredentials = async (email: string, password: string) => {
-    const emailLower = email.trim().toLowerCase();
-    let supabaseSuccess = false;
-
-    // 1. Autenticação oficial via Supabase Auth
-    if (supabase) {
-      try {
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: emailLower,
-          password
-        });
-
-        if (!authError && authData?.session) {
-          supabaseSuccess = true;
-          setCurrentAccountEmail(emailLower);
-
-          // Sincroniza usuário na tabela users
-          const meta = authData.user?.user_metadata || {};
-          await authenticatedFetch('/api/auth/sync-user', {
-            method: 'POST',
-            body: JSON.stringify({
-              name: meta.name || meta.full_name || 'Profissional',
-              phone: meta.phone || meta.whatsapp || '',
-              crp: meta.crp || ''
-            })
-          }).catch(() => {});
-
-          // Carrega agendamentos reais do usuário
-          try {
-            const apptRes = await authenticatedFetch('/api/appointments');
-            if (apptRes.ok) {
-              const apptData = await apptRes.json();
-              if (apptData.success && Array.isArray(apptData.appointments)) {
-                setSessions(apptData.appointments);
-              }
-            }
-          } catch (e) {}
-
-          addToast(`Bem-vindo(a) de volta!`, 'success');
-          return { success: true };
-        }
-      } catch (err: any) {
-        console.warn('[SUPABASE LOGIN EXCEPTION]', err.message);
-      }
-    }
-
-    // 2. Fallback de contas locais (caso Supabase offline ou admin local)
-    const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
-
-    if (!acc) {
-      return {
-        success: false,
-        message: `Nenhuma conta encontrada para o e-mail '${emailLower}'. Verifique o endereço ou crie uma nova conta.`
-      };
-    }
-
-    const isAccAdmin = Boolean(
-      acc.isMasterAdmin ||
-      acc.profile?.isMasterAdmin ||
-      acc.profile?.isAdmin ||
-      acc.profile?.role === 'Administrador SaaS' ||
-      emailLower === 'sessaocerta@gmail.com' ||
-      emailLower === 'admin@sessaocerta.com.br'
-    );
-
-    if (acc.password !== password) {
-      if (isAccAdmin && (password === 'SC_Admin@2026!' || password === 'admin123')) {
-        setAccounts((prev) =>
-          prev.map((a) => (a.email.toLowerCase() === emailLower ? { ...a, password } : a))
-        );
-      } else {
+      if (error) {
         return {
           success: false,
-          message: 'Senha incorreta. Por favor, verifique sua senha e tente novamente.'
+          message: error.message || 'Código de verificação inválido ou expirado no Supabase Auth.'
         };
       }
-    }
 
-    if (!acc.isConfirmed) {
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setAccounts((prev) =>
-        prev.map((a) => (a.email.toLowerCase() === emailLower ? { ...a, verificationCode: newCode } : a))
-      );
+      if (data?.session) {
+        const user = data.session.user;
+        const authEmail = user.email ? user.email.toLowerCase() : emailLower;
+        setCurrentAccountEmail(authEmail);
+        const meta = user.user_metadata || {};
+        setProfile((prev) => ({
+          ...prev,
+          id: user.id,
+          name: meta.name || prev.name,
+          email: authEmail,
+          phone: meta.phone || prev.phone,
+          crp: meta.crp || prev.crp
+        }));
+
+        await authenticatedFetch('/api/auth/sync-user', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: meta.name || 'Profissional',
+            phone: meta.phone || '',
+            crp: meta.crp || ''
+          })
+        }).catch(() => {});
+
+        addToast('E-mail verificado com sucesso no Supabase Auth!', 'success');
+        return { success: true };
+      }
+
+      return { success: true, message: 'E-mail confirmado com sucesso. Você já pode fazer login.' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Erro ao validar código com Supabase Auth.' };
+    }
+  };
+
+  // 3. Resend Verification Code com Supabase Auth
+  const resendVerificationCode = async (email: string) => {
+    const emailLower = email.trim().toLowerCase();
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: emailLower
+      });
+
+      if (error) {
+        addToast(`Erro ao reenviar confirmação: ${error.message}`, 'error');
+        return { success: false, message: error.message };
+      }
+
+      addToast(`E-mail de confirmação reenviado para ${emailLower}!`, 'info');
+      return { success: true };
+    } catch (err: any) {
+      addToast(`Erro ao reenviar confirmação.`, 'error');
+      return { success: false, message: err.message };
+    }
+  };
+
+  // 4. Login With Credentials (Exclusivo Supabase Auth)
+  const loginWithCredentials = async (email: string, password: string) => {
+    const emailLower = email.trim().toLowerCase();
+
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: emailLower,
+      password
+    });
+
+    if (authError || !authData?.session) {
+      const rawMsg = authError?.message || 'Falha na autenticação';
+      const isInvalidCredentials =
+        rawMsg.toLowerCase().includes('invalid login credentials') ||
+        rawMsg.toLowerCase().includes('invalid credentials');
+
+      if (isInvalidCredentials) {
+        return {
+          success: false,
+          message: 'E-mail ou senha incorretos. Por favor, verifique suas credenciais.'
+        };
+      }
+
+      if (rawMsg.toLowerCase().includes('email not confirmed')) {
+        return {
+          success: false,
+          requiresVerification: true,
+          message: 'Seu e-mail ainda não foi confirmado no Supabase. Verifique sua caixa de entrada para confirmar sua conta antes de entrar.'
+        };
+      }
+
       return {
         success: false,
-        requiresVerification: true,
-        message: 'Esta conta ainda não foi confirmada. Digite o código de verificação enviado.'
+        message: `Erro de autenticação no Supabase: ${rawMsg}`
       };
     }
 
-    setCurrentAccountEmail(emailLower);
-    setProfile(acc.profile);
-    setPatients(acc.patients || []);
-    setSessions(acc.sessions || []);
+    const sessionUser = authData.user;
+    const authEmail = sessionUser.email ? sessionUser.email.toLowerCase() : emailLower;
+    setCurrentAccountEmail(authEmail);
 
-    if (isAccAdmin) {
+    const meta = sessionUser.user_metadata || {};
+    const isAdminUser = authEmail === 'sessaocerta@gmail.com' || authEmail === 'admin@sessaocerta.com.br';
+
+    setProfile((prev) => ({
+      ...prev,
+      id: sessionUser.id,
+      name: meta.name || meta.full_name || prev.name,
+      email: authEmail,
+      phone: meta.phone || meta.whatsapp || prev.phone,
+      crp: meta.crp || prev.crp,
+      isMasterAdmin: isAdminUser,
+      isAdmin: isAdminUser
+    }));
+
+    if (isAdminUser) {
       setUserRoleState('admin');
-      localStorage.setItem('sessao_certa_user_role', 'admin');
     } else {
       setUserRoleState('professional');
-      localStorage.setItem('sessao_certa_user_role', 'professional');
     }
 
-    addToast(`Bem-vindo(a) de volta, ${acc.name.split(' ')[0]}!`, 'success');
+    // Sincroniza metadados com tabela users
+    await authenticatedFetch('/api/auth/sync-user', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: meta.name || meta.full_name || 'Profissional',
+        phone: meta.phone || meta.whatsapp || '',
+        crp: meta.crp || ''
+      })
+    }).catch(() => {});
+
+    // Carrega dados oficiais do backend autenticado com o JWT do Supabase
+    try {
+      const [pRes, aRes] = await Promise.allSettled([
+        authenticatedFetch('/api/patients'),
+        authenticatedFetch('/api/appointments')
+      ]);
+
+      if (pRes.status === 'fulfilled' && pRes.value.ok) {
+        const pData = await pRes.value.json();
+        if (pData.success && Array.isArray(pData.patients)) {
+          setPatients(pData.patients);
+        }
+      }
+
+      if (aRes.status === 'fulfilled' && aRes.value.ok) {
+        const aData = await aRes.value.json();
+        if (aData.success && Array.isArray(aData.appointments)) {
+          setSessions(aData.appointments);
+        }
+      }
+    } catch (e) {
+      console.warn('[POST-LOGIN SYNC ERROR]', e);
+    }
+
+    addToast(`Bem-vindo(a) de volta!`, 'success');
     return { success: true };
   };
 
   // 5. Logout Account
   const logoutAccount = async () => {
-    if (supabase) {
-      try {
-        await supabase.auth.signOut();
-      } catch (err) {
-        console.warn('[SUPABASE SIGNOUT WARN]', err);
-      }
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[SUPABASE SIGNOUT WARN]', err);
     }
 
     setCurrentAccountEmail(null);
@@ -1247,38 +1054,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addToast('Sessão do consultório encerrada com sucesso.', 'info');
   };
 
-  // 6. Request Password Reset
-  const requestPasswordReset = (email: string) => {
+  // 6. Request Password Reset (via Supabase Auth)
+  const requestPasswordReset = async (email: string) => {
     const emailLower = email.trim().toLowerCase();
-    const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
-    if (!acc) {
-      return { success: false, message: 'Nenhuma conta cadastrada com este e-mail.' };
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(emailLower, {
+        redirectTo: `${window.location.origin}`
+      });
+
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      addToast(`Instruções de redefinição de senha enviadas para ${emailLower}!`, 'info');
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Erro ao solicitar redefinição de senha.' };
     }
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setAccounts((prev) =>
-      prev.map((a) => (a.email.toLowerCase() === emailLower ? { ...a, verificationCode: code } : a))
-    );
-    addToast(`Código de redefinição enviado para ${emailLower}: ${code}`, 'info');
-    return { success: true, code };
   };
 
-  // 7. Confirm Password Reset
-  const confirmPasswordReset = (email: string, code: string, newPassword: string) => {
-    const emailLower = email.trim().toLowerCase();
-    const acc = accounts.find((a) => a.email.toLowerCase() === emailLower);
-    if (!acc) {
-      return { success: false, message: 'Conta não encontrada.' };
-    }
-    if (acc.verificationCode === code.trim() || code.trim() === '123456') {
-      setAccounts((prev) =>
-        prev.map((a) =>
-          a.email.toLowerCase() === emailLower ? { ...a, password: newPassword } : a
-        )
-      );
-      addToast('Sua senha foi redefinida com sucesso! Faça login com a nova senha.', 'success');
+  // 7. Confirm Password Reset (via Supabase Auth)
+  const confirmPasswordReset = async (password: string) => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password
+      });
+
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      addToast('Sua senha foi redefinida com sucesso no Supabase Auth! Faça login.', 'success');
       return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Erro ao redefinir senha no Supabase Auth.' };
     }
-    return { success: false, message: 'Código de redefinição de senha inválido.' };
   };
 
   // Reset Data & Demo Management

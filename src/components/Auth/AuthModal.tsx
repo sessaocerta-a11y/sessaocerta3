@@ -226,22 +226,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         crp
       });
 
-      setActiveCodeDisplay(result.verificationCode);
-      await sendEmailBackend(email, name, result.verificationCode, 'register');
-
       setIsLoading(false);
-      addToast(`E-mail de confirmação enviado com sucesso para ${email}!`, 'success');
-      setMode('confirm_email');
+      if (result.requiresEmailConfirmation) {
+        addToast(`Cadastro registrado no Supabase! Verifique seu e-mail para confirmar a conta.`, 'success');
+        setMode('confirm_email');
+      } else {
+        addToast(`Conta criada e autenticada com sucesso!`, 'success');
+        onSuccessAuth();
+        onClose();
+      }
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err.message || 'Erro ao criar conta. Tente novamente.');
+      setErrorMessage(err.message || 'Erro ao criar conta no Supabase Auth. Tente novamente.');
     }
   };
 
   const handleConfirmEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!verificationCodeInput || verificationCodeInput.trim().length < 6) {
-      setErrorMessage('Digite o código de 6 dígitos.');
+      setErrorMessage('Digite o código de verificação recebido.');
       return;
     }
 
@@ -251,14 +254,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await verifyAccountCode(email, verificationCodeInput);
       if (res.success) {
-        // Dispara o e-mail de Boas-vindas
-        await sendEmailBackend(email, name || 'Profissional', undefined, 'welcome');
         setIsLoading(false);
         onSuccessAuth();
         onClose();
       } else {
         setIsLoading(false);
-        setErrorMessage(res.message || 'Código inválido. Verifique o código enviado para seu e-mail e tente novamente.');
+        setErrorMessage(res.message || 'Código inválido no Supabase Auth. Verifique o código enviado para seu e-mail e tente novamente.');
       }
     } catch (err: any) {
       setIsLoading(false);
@@ -270,13 +271,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage(null);
     setIsLoading(true);
 
-    const newCode = resendVerificationCode(email);
-    setActiveCodeDisplay(newCode);
-
-    await sendEmailBackend(email, name || 'Profissional', newCode, 'register');
-
+    const res = await resendVerificationCode(email);
     setIsLoading(false);
-    addToast(`Novo e-mail com código enviado para ${email}!`, 'info');
+    if (!res.success) {
+      setErrorMessage(res.message || 'Erro ao reenviar e-mail de confirmação.');
+    }
   };
 
   const handleCopyCodeToInput = (code: string) => {
@@ -300,7 +299,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onSuccessAuth();
         onClose();
       } else if (res.requiresVerification) {
-        setErrorMessage(res.message || 'Confirme sua conta antes de entrar.');
+        setErrorMessage(res.message || 'Confirme sua conta no Supabase antes de entrar.');
         setMode('confirm_email');
       } else {
         setErrorMessage(res.message || 'Credenciais inválidas.');
@@ -324,33 +323,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
-      setErrorMessage('Informe seu e-mail cadastrado para enviarmos o código de redefinição.');
+      setErrorMessage('Informe seu e-mail cadastrado para enviarmos o link de redefinição.');
       return;
     }
     setIsLoading(true);
     setErrorMessage(null);
 
-    const res = requestPasswordReset(email);
+    const res = await requestPasswordReset(email);
+    setIsLoading(false);
     if (res.success) {
-      const code = res.code || '123456';
-      await sendEmailBackend(email, 'Profissional', code, 'reset');
-      setIsLoading(false);
-      setVerificationCodeInput('');
-      setNewPassword('');
-      setNewPasswordConfirm('');
-      setMode('reset_password');
+      setMode('login');
     } else {
-      setIsLoading(false);
-      setErrorMessage(res.message || 'E-mail não encontrado.');
+      setErrorMessage(res.message || 'E-mail não encontrado no Supabase Auth.');
     }
   };
 
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!verificationCodeInput || verificationCodeInput.trim().length < 6) {
-      setErrorMessage('Informe o código de redefinição de 6 dígitos.');
-      return;
-    }
     if (newPassword.length < 8) {
       setErrorMessage('A nova senha deve ter no mínimo 8 caracteres.');
       return;
@@ -363,16 +352,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
 
-    const res = confirmPasswordReset(email, verificationCodeInput, newPassword);
+    const res = await confirmPasswordReset(newPassword);
+    setIsLoading(false);
     if (res.success) {
       setPassword(newPassword);
-      await sendEmailBackend(email, 'Profissional', undefined, 'password_changed');
-      setIsLoading(false);
-      addToast('Senha redefinida com sucesso!', 'success');
       setMode('login');
     } else {
-      setIsLoading(false);
-      setErrorMessage(res.message || 'Código inválido.');
+      setErrorMessage(res.message || 'Erro ao redefinir senha no Supabase Auth.');
     }
   };
 
